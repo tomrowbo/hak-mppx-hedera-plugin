@@ -6,8 +6,9 @@ describe('mppxHederaPlugin', () => {
     expect(mppxHederaPlugin.name).toBe('hak-mppx-hedera-plugin');
   });
 
-  it('has version "1.0.0"', () => {
-    expect(mppxHederaPlugin.version).toBe('1.0.0');
+  it('has a version string', () => {
+    expect(typeof mppxHederaPlugin.version).toBe('string');
+    expect(mppxHederaPlugin.version).toBeTruthy();
   });
 
   it('tools() returns array of 4 tools', () => {

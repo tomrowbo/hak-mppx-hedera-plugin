@@ -26,7 +26,7 @@ export const mppxHederaPluginToolNames = {
 
 export const mppxHederaPlugin: Plugin = {
   name: 'hak-mppx-hedera-plugin',
-  version: '1.0.0',
+  version: '1.0.2',
   description: 'Machine Payments Protocol (MPP) for Hedera — charge and session payments with USDC. Enables AI agents to pay for 402-protected APIs.',
   tools: (context: Context): Tool[] => [
     chargeFetchTool(context) as unknown as Tool,
