@@ -1,0 +1,58 @@
+{
+  "name": "hak-mppx-hedera-plugin",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Machine Payments Protocol (MPP) plugin for Hedera Agent Kit — charge and session payments with USDC",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": [
+    "hedera",
+    "agent-kit",
+    "mpp",
+    "mppx",
+    "payments",
+    "usdc",
+    "ai-agent",
+    "http-402"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tomrowbo/hak-mppx-hedera-plugin"
+  },
+  "peerDependencies": {
+    "@hashgraph/hedera-agent-kit": ">=4.0.0",
+    "@hiero-ledger/sdk": ">=2.81.0",
+    "mppx": ">=0.5.9",
+    "mppx-hedera": ">=0.2.1",
+    "viem": ">=2.21.0",
+    "zod": ">=3.0.0"
+  },
+  "devDependencies": {
+    "@hashgraph/hedera-agent-kit": "latest",
+    "@hiero-ledger/sdk": "latest",
+    "mppx": "latest",
+    "mppx-hedera": "latest",
+    "tsup": "^8.5.1",
+    "typescript": "latest",
+    "viem": "latest",
+    "vitest": "^4.1.4",
+    "zod": "latest"
+  }
+}
