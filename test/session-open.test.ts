@@ -6,13 +6,13 @@ import * as sessionStore from '../src/session-store.js';
 // ---------------------------------------------------------------------------
 
 vi.mock('../src/bridge.js', () => ({
-  clientToViemAccount: vi.fn(() => ({
+  contextToViemAccount: vi.fn(() => ({
     address: '0x1111111111111111111111111111111111111111',
   })),
   resolveNetwork: vi.fn(() => 'testnet'),
   resolveChain: vi.fn(() => ({ id: 296, name: 'Hedera Testnet' })),
   getOperatorId: vi.fn(() => '0.0.12345'),
-  getOperatorKey: vi.fn(() => '0xab'.repeat(32)),
+  getPrivateKey: vi.fn(() => '0xab'.repeat(32)),
 }));
 
 const mockCreateCredential = vi.fn(async () => 'Payment eyJmYWtlIjoidHJ1ZSJ9');
@@ -48,7 +48,7 @@ const mockClient: any = {
   operatorAccountId: { toString: () => '0.0.12345' },
 };
 
-const context = { network: 'testnet' };
+const context = { network: 'testnet', privateKey: '0x' + 'ab'.repeat(32) };
 const TEST_URL = 'https://api.example.com';
 
 function make402Response(): Response {

@@ -15,7 +15,7 @@ const fakeCredential = `Payment ${fakeCredB64}`;
 const mockCreateCredential = vi.fn(async () => fakeCredential);
 
 vi.mock('../src/bridge.js', () => ({
-  clientToViemAccount: vi.fn(() => ({
+  contextToViemAccount: vi.fn(() => ({
     address: '0x1111111111111111111111111111111111111111',
     signTypedData: vi.fn(async () => '0xdeadbeef'),
     type: 'local',
@@ -101,7 +101,7 @@ const mockClient: any = {
   operatorAccountId: { toString: () => '0.0.12345' },
 };
 
-const context = { network: 'testnet' };
+const context = { network: 'testnet', privateKey: '0x' + 'ab'.repeat(32) };
 const TEST_URL = 'https://api.example.com';
 
 function seedSession() {

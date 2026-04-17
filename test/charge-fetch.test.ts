@@ -16,7 +16,7 @@ const mockClient = {
   operatorAccountId: { toString: () => '0.0.12345' },
 };
 
-const context = { network: 'testnet' };
+const context = { network: 'testnet', privateKey: '0x' + 'ab'.repeat(32) };
 
 /**
  * Build a proper 402 response with a WWW-Authenticate: Payment header

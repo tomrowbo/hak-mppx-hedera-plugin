@@ -43,4 +43,5 @@ export default mppxHederaPlugin;
 export * as sessionStore from './session-store.js';
 
 // Re-export bridge utilities
-export { clientToViemAccount, clientToViemClients, getOperatorId, getOperatorKey } from './bridge.js';
+export type { MppxContext } from './bridge.js';
+export { contextToViemAccount, contextToViemClients, getOperatorId, getPrivateKey } from './bridge.js';

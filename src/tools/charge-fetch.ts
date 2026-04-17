@@ -9,7 +9,7 @@ import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge, Credential } from 'mppx';
 import { charge } from 'mppx-hedera/client';
-import { getOperatorId, getOperatorKey, resolveNetwork } from '../bridge.js';
+import { getOperatorId, getPrivateKey, resolveNetwork, type MppxContext } from '../bridge.js';
 
 export const TOOL_NAME = 'mppx_hedera_charge_fetch_tool';
 
@@ -35,9 +35,7 @@ const parameters = z.object({
   maxAmount: z.string().default('100000').describe('Maximum USDC amount in base units (6 decimals). Default: 100000 = $0.10'),
 });
 
-type Context = { network?: string; [key: string]: unknown };
-
-async function execute(client: Client, context: Context, params: z.infer<typeof parameters>) {
+async function execute(client: Client, context: MppxContext, params: z.infer<typeof parameters>) {
   const { url, method, body, maxAmount } = params;
 
   // 1. Initial request
@@ -79,7 +77,7 @@ async function execute(client: Client, context: Context, params: z.infer<typeof 
   const network = resolveNetwork(context);
   const chargeHandler = charge({
     operatorId: getOperatorId(client),
-    operatorKey: getOperatorKey(client),
+    operatorKey: getPrivateKey(context),
     network,
   });
 
@@ -119,7 +117,7 @@ async function execute(client: Client, context: Context, params: z.infer<typeof 
   };
 }
 
-export default (context: Context = {}) => ({
+export default (context: MppxContext = {}) => ({
   method: TOOL_NAME,
   name: 'MPP Charge Fetch',
   description,

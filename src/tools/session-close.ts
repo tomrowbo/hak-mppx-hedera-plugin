@@ -14,7 +14,7 @@ import {
   VOUCHER_DOMAIN_VERSION,
   VOUCHER_TYPES,
 } from 'mppx-hedera';
-import { clientToViemAccount, resolveChain, resolveNetwork } from '../bridge.js';
+import { contextToViemAccount, resolveChain, resolveNetwork, type MppxContext } from '../bridge.js';
 import * as sessionStore from '../session-store.js';
 
 export const TOOL_NAME = 'mppx_hedera_session_close_tool';
@@ -31,7 +31,7 @@ const parameters = z.object({
   url: z.string().describe('The URL of the server whose session to close'),
 });
 
-type Context = { network?: string; [key: string]: unknown };
+type Context = MppxContext;
 
 async function execute(client: Client, context: Context, params: z.infer<typeof parameters>) {
   const { url } = params;
@@ -93,7 +93,7 @@ async function execute(client: Client, context: Context, params: z.infer<typeof 
 
   // 3. Sign a close voucher (EIP-712)
   const network = resolveNetwork(context);
-  const account = clientToViemAccount(client);
+  const account = contextToViemAccount(context);
   const chain = resolveChain(network);
   const escrow = challenge.request.methodDetails?.escrowContract ?? challenge.request.escrowContract;
 

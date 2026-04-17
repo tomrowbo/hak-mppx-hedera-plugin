@@ -1,80 +1,77 @@
 import { describe, it, expect } from 'vitest';
 import {
-  clientToViemAccount,
+  contextToViemAccount,
   getOperatorId,
-  getOperatorKey,
+  getPrivateKey,
   resolveChain,
 } from '../src/bridge.js';
+import type { MppxContext } from '../src/bridge.js';
 
-/**
- * Create a mock Hiero SDK Client with optional operator key and account ID.
- * The real Client stores these as objects with toString/toStringRaw methods.
- */
-function mockClient(rawKey?: string, accountId?: string) {
+function mockClient(accountId?: string) {
   return {
-    operatorAccountKey: rawKey ? { toStringRaw: () => rawKey } : undefined,
     operatorAccountId: accountId ? { toString: () => accountId } : undefined,
   };
 }
 
 describe('bridge', () => {
-  describe('clientToViemAccount', () => {
-    it('extracts ECDSA key and returns account with correct address', () => {
-      // 32-byte hex key (secp256k1 private key)
+  describe('contextToViemAccount', () => {
+    it('creates viem account from context privateKey', () => {
       const rawKey = 'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
-      const client = mockClient(rawKey);
-      const account = clientToViemAccount(client as any);
+      const context: MppxContext = { privateKey: `0x${rawKey}` };
+      const account = contextToViemAccount(context);
 
       expect(account).toBeDefined();
       expect(account.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
-      // This is the well-known Hardhat #0 address for this key
       expect(account.address.toLowerCase()).toBe('0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266');
     });
 
-    it('throws when no operator key is present', () => {
-      const client = mockClient(undefined, '0.0.12345');
-      expect(() => clientToViemAccount(client as any)).toThrow(
-        'Cannot extract operator key',
-      );
+    it('throws when no privateKey in context', () => {
+      const context: MppxContext = {};
+      expect(() => contextToViemAccount(context)).toThrow('context.privateKey is required');
     });
   });
 
   describe('getOperatorId', () => {
     it('returns account ID string', () => {
-      const client = mockClient('ab'.repeat(32), '0.0.98765');
+      const client = mockClient('0.0.98765');
       expect(getOperatorId(client as any)).toBe('0.0.98765');
     });
 
-    it('throws when no operator account ID is present', () => {
-      const client = mockClient('ab'.repeat(32));
-      expect(() => getOperatorId(client as any)).toThrow(
-        'Cannot extract operator account ID',
-      );
+    it('throws when no operator account ID', () => {
+      const client = mockClient();
+      expect(() => getOperatorId(client as any)).toThrow('Cannot extract operator account ID');
     });
   });
 
-  describe('getOperatorKey', () => {
-    it('returns 0x-prefixed hex string', () => {
-      const rawKey = 'ab'.repeat(32);
-      const client = mockClient(rawKey, '0.0.12345');
-      const result = getOperatorKey(client as any);
-      expect(result).toBe(`0x${rawKey}`);
-      expect(result).toMatch(/^0x[0-9a-f]{64}$/);
+  describe('getPrivateKey', () => {
+    it('returns 0x-prefixed hex from context', () => {
+      const context: MppxContext = { privateKey: '0x' + 'ab'.repeat(32) };
+      expect(getPrivateKey(context)).toBe('0x' + 'ab'.repeat(32));
+    });
+
+    it('adds 0x prefix if missing', () => {
+      const context: MppxContext = { privateKey: 'ab'.repeat(32) };
+      expect(getPrivateKey(context)).toBe('0x' + 'ab'.repeat(32));
+    });
+
+    it('throws when no privateKey', () => {
+      const context: MppxContext = {};
+      expect(() => getPrivateKey(context)).toThrow('context.privateKey is required');
     });
   });
 
   describe('resolveChain', () => {
-    it('returns testnet chain when network is undefined or "testnet"', () => {
-      const chain1 = resolveChain();
-      const chain2 = resolveChain('testnet');
-      expect(chain1).toBe(chain2);
-      expect(chain1.name).toBeDefined();
+    it('returns testnet for "testnet"', () => {
+      expect(resolveChain('testnet').id).toBe(296);
     });
 
-    it('returns mainnet chain when network is "mainnet"', () => {
-      const mainnet = resolveChain('mainnet');
-      const testnet = resolveChain('testnet');
-      expect(mainnet).not.toBe(testnet);
+    it('returns mainnet for "mainnet"', () => {
+      expect(resolveChain('mainnet').id).toBe(295);
+    });
+
+    it('defaults to testnet', () => {
+      expect(resolveChain().id).toBe(296);
+      expect(resolveChain(undefined).id).toBe(296);
     });
   });
 });

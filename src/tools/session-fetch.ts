@@ -8,6 +8,7 @@
 import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
+import type { MppxContext } from '../bridge.js';
 import * as sessionStore from '../session-store.js';
 
 export const TOOL_NAME = 'mppx_hedera_session_fetch_tool';
@@ -28,7 +29,7 @@ const parameters = z.object({
   body: z.string().optional().describe('Request body for POST requests'),
 });
 
-type Context = { network?: string; [key: string]: unknown };
+type Context = MppxContext;
 
 async function execute(client: Client, context: Context, params: z.infer<typeof parameters>) {
   const { url, method, body } = params;

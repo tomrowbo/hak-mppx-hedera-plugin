@@ -6,7 +6,7 @@ import * as sessionStore from '../src/session-store.js';
 // ---------------------------------------------------------------------------
 
 vi.mock('../src/bridge.js', () => ({
-  clientToViemAccount: vi.fn(() => ({
+  contextToViemAccount: vi.fn(() => ({
     address: '0x1111111111111111111111111111111111111111',
   })),
   resolveNetwork: vi.fn(() => 'testnet'),
@@ -42,7 +42,7 @@ const mockClient: any = {
   operatorAccountId: { toString: () => '0.0.12345' },
 };
 
-const context = { network: 'testnet' };
+const context = { network: 'testnet', privateKey: '0x' + 'ab'.repeat(32) };
 const TEST_URL = 'https://api.example.com/data';
 
 function seedSession() {

@@ -9,7 +9,7 @@ import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
 import { hederaSession } from 'mppx-hedera/client';
-import { clientToViemAccount, resolveNetwork } from '../bridge.js';
+import { contextToViemAccount, resolveNetwork, type MppxContext } from '../bridge.js';
 import * as sessionStore from '../session-store.js';
 
 export const TOOL_NAME = 'mppx_hedera_session_open_tool';
@@ -29,7 +29,7 @@ const parameters = z.object({
   deposit: z.string().default('0.10').describe('USDC to deposit into the channel (e.g. "0.10" for 10 cents)'),
 });
 
-type Context = { network?: string; [key: string]: unknown };
+type Context = MppxContext;
 
 async function execute(client: Client, context: Context, params: z.infer<typeof parameters>) {
   const { url, deposit } = params;
@@ -70,7 +70,7 @@ async function execute(client: Client, context: Context, params: z.infer<typeof 
 
   // 2. Create session handler with viem account (bridge from Agent Kit)
   const network = resolveNetwork(context);
-  const account = clientToViemAccount(client);
+  const account = contextToViemAccount(context);
 
   const handler = hederaSession({ account, deposit });
 
