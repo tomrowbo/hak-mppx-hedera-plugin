@@ -1,21 +1,19 @@
 /**
- * Tier 2: Integration tests — real mppx HTTP server, mocked chain via DI.
+ * Tier 2: Integration tests — full end-to-end locally.
  *
- * Tests the session mppx flow through real HTTP. The server uses getClients DI
- * to mock chain interactions. The client signs with a real viem account (off-chain
- * only — no on-chain calls in the test).
+ * Real hederaSession() client → real mppx HTTP server → real session verify.
+ * Only external endpoints are mocked (Hedera chain responses via DI).
  *
- * For the open action, we build the credential manually (since the client's
- * hederaSession would try to hit real chain for approve/open). The voucher
- * and close actions are purely off-chain (EIP-712 signing).
+ * The client's approve → open → voucher → close flow runs for real,
+ * just with mocked chain responses so no actual on-chain calls happen.
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Mppx } from 'mppx/server';
 import { Challenge, Credential } from 'mppx';
 import { session } from 'mppx-hedera/server';
+import { hederaSession } from 'mppx-hedera/client';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
-import { createWalletClient, http as viemHttp } from 'viem';
 import { zeroAddress } from 'viem';
 import {
   hederaTestnet,
@@ -29,23 +27,31 @@ import http from 'http';
 const TEST_KEY = generatePrivateKey();
 const TEST_ACCOUNT = privateKeyToAccount(TEST_KEY);
 const RECIPIENT = TEST_ACCOUNT.address;
-const TOKEN = '0x0000000000000000000000000000000000001549';
-const ESCROW = '0x401b6dc30221823361E4876f5C502e37249D84C3';
+const TOKEN = '0x0000000000000000000000000000000000001549' as `0x${string}`;
+const ESCROW = '0x401b6dc30221823361E4876f5C502e37249D84C3' as `0x${string}`;
 const SERVER_ID = 'integration-test.local';
 const SECRET_KEY = 'integration-test-secret-key-32chars-min!!';
-const CHANNEL_ID = '0x' + '00'.repeat(31) + '01';
 
-// ── Mock chain clients ───────────────────────────────────────────
-let mocks: ReturnType<typeof createMocks>;
+// Deterministic channelId that the mock readContract(computeChannelId) returns
+const MOCK_CHANNEL_ID = '0x' + 'ab'.repeat(32) as `0x${string}`;
 
-function createMocks() {
+// ── Mock chain clients for SERVER side (session verify uses DI) ──
+function createServerMocks() {
   return {
     publicClient: {
-      readContract: vi.fn().mockResolvedValue({
-        finalized: false, closeRequestedAt: 0n,
-        payer: TEST_ACCOUNT.address, payee: RECIPIENT,
-        token: TOKEN, authorizedSigner: zeroAddress,
-        deposit: 1000000n, settled: 0n,
+      readContract: vi.fn().mockImplementation(async ({ functionName }: any) => {
+        if (functionName === 'getChannel') {
+          return {
+            finalized: false, closeRequestedAt: 0n,
+            payer: TEST_ACCOUNT.address, payee: RECIPIENT,
+            token: TOKEN, authorizedSigner: zeroAddress,
+            deposit: 1000000n, settled: 0n,
+          };
+        }
+        if (functionName === 'computeChannelId') {
+          return MOCK_CHANNEL_ID;
+        }
+        return null;
       }),
       verifyTypedData: vi.fn().mockResolvedValue(true),
       waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: 'success' }),
@@ -57,46 +63,62 @@ function createMocks() {
   };
 }
 
-// ── EIP-712 voucher signer ───────────────────────────────────────
-async function signVoucher(channelId: string, cumulativeAmount: bigint) {
-  const walletClient = createWalletClient({
+// ── Mock chain clients for CLIENT side (hederaSession uses getClient/getPublicClient DI) ──
+function createClientMocks() {
+  const mockWalletClient = {
+    writeContract: vi.fn().mockResolvedValue('0x' + 'dd'.repeat(32)),
+    signTypedData: vi.fn().mockImplementation(async ({ message }: any) => {
+      // Use real signing — it's just crypto, no network
+      const { createWalletClient, http: viemHttp } = await import('viem');
+      const real = createWalletClient({ account: TEST_ACCOUNT, chain: hederaTestnet, transport: viemHttp('http://localhost:1') });
+      return real.signTypedData({
+        account: TEST_ACCOUNT,
+        domain: {
+          name: VOUCHER_DOMAIN_NAME,
+          version: VOUCHER_DOMAIN_VERSION,
+          chainId: 296,
+          verifyingContract: ESCROW,
+        },
+        types: VOUCHER_TYPES,
+        primaryType: 'Voucher',
+        message,
+      });
+    }),
     account: TEST_ACCOUNT,
     chain: hederaTestnet,
-    transport: viemHttp('https://localhost:1'), // won't be called — just for type
-  });
+  };
 
-  return walletClient.signTypedData({
-    account: TEST_ACCOUNT,
-    domain: {
-      name: VOUCHER_DOMAIN_NAME,
-      version: VOUCHER_DOMAIN_VERSION,
-      chainId: 296,
-      verifyingContract: ESCROW as `0x${string}`,
-    },
-    types: VOUCHER_TYPES,
-    primaryType: 'Voucher',
-    message: { channelId: channelId as `0x${string}`, cumulativeAmount },
-  });
+  const mockPublicClient = {
+    readContract: vi.fn().mockImplementation(async ({ functionName }: any) => {
+      if (functionName === 'allowance') return 0n; // force approve
+      if (functionName === 'computeChannelId') return MOCK_CHANNEL_ID;
+      return null;
+    }),
+    waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: 'success' }),
+  };
+
+  return { walletClient: mockWalletClient, publicClient: mockPublicClient };
 }
 
 // ── Local mppx HTTP server ───────────────────────────────────────
 let server: http.Server;
 let baseUrl: string;
+let serverMocks: ReturnType<typeof createServerMocks>;
 
 async function setupServer() {
-  mocks = createMocks();
+  serverMocks = createServerMocks();
 
   const sessionHandler = session({
     account: TEST_ACCOUNT,
     recipient: RECIPIENT,
-    escrowContract: ESCROW as `0x${string}`,
-    currency: TOKEN as `0x${string}`,
+    escrowContract: ESCROW,
+    currency: TOKEN,
     amount: '0.001',
     suggestedDeposit: '0.01',
     decimals: 6,
     unitType: 'request',
     testnet: true,
-    getClients: () => mocks as any,
+    getClients: () => serverMocks as any,
   });
 
   const mppx = Mppx.create({
@@ -121,11 +143,7 @@ async function setupServer() {
       if (typeof v === 'string') headers[k] = v;
     }
 
-    const request = new Request(`${baseUrl}${req.url}`, {
-      method: req.method,
-      headers,
-    });
-
+    const request = new Request(`${baseUrl}${req.url}`, { method: req.method, headers });
     const result = await route(request);
 
     if (result.status === 402) {
@@ -150,7 +168,30 @@ async function setupServer() {
   });
 }
 
-describe('integration: session tools against local mppx server', () => {
+// ── Create a real hederaSession client with mocked chain ─────────
+function createTestClient() {
+  const clientMocks = createClientMocks();
+
+  return hederaSession({
+    account: TEST_ACCOUNT,
+    deposit: '0.01',
+    escrowContract: ESCROW,
+    getClient: () => clientMocks.walletClient as any,
+    getPublicClient: () => clientMocks.publicClient as any,
+  });
+}
+
+// ── Helper: decode credential payload ────────────────────────────
+function decodeCredential(serialized: string) {
+  const b64 = serialized.replace('Payment ', '');
+  return JSON.parse(Buffer.from(b64, 'base64url').toString());
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────
+
+describe('integration: full local E2E with mocked chain', () => {
   beforeAll(async () => {
     await setupServer();
   });
@@ -160,10 +201,10 @@ describe('integration: session tools against local mppx server', () => {
   });
 
   beforeEach(() => {
-    mocks = createMocks();
+    serverMocks = createServerMocks();
   });
 
-  it('402 challenge has method=hedera, intent=session', async () => {
+  it('402 challenge has correct method and intent', async () => {
     const res = await fetch(`${baseUrl}/session`);
     expect(res.status).toBe(402);
     const challenge = Challenge.fromResponse(res);
@@ -171,161 +212,159 @@ describe('integration: session tools against local mppx server', () => {
     expect(challenge.intent).toBe('session');
   });
 
-  it('open → 200 with manually built credential', async () => {
+  it('real hederaSession client opens channel via mppx server', async () => {
+    const client = createTestClient();
+
+    // Get challenge from real mppx HTTP server
     const res = await fetch(`${baseUrl}/session`);
+    expect(res.status).toBe(402);
     const challenge = Challenge.fromResponse(res);
-    const amount = BigInt(challenge.request.amount);
 
-    const sig = await signVoucher(CHANNEL_ID, amount);
+    // Real hederaSession() runs: check allowance → approve → open → sign voucher
+    const credential = await client.createCredential({ challenge });
+    expect(credential).toBeTruthy();
+    expect(credential.startsWith('Payment ')).toBe(true);
 
-    const cred = Credential.from({
-      challenge,
-      payload: {
-        action: 'open',
-        channelId: CHANNEL_ID,
-        cumulativeAmount: amount.toString(),
-        signature: sig,
-        txHash: `0x${'aa'.repeat(32)}`,
-      },
-    });
-
+    // Send credential to real mppx HTTP server
     const openRes = await fetch(`${baseUrl}/session`, {
-      headers: { Authorization: Credential.serialize(cred) },
+      headers: { Authorization: credential },
     });
     expect(openRes.status).toBe(200);
   });
 
-  it('voucher after open → 200', async () => {
-    // Open first
+  it('voucher after open succeeds (real client, real server)', async () => {
+    const client = createTestClient();
+
+    // Open
     const res1 = await fetch(`${baseUrl}/session`);
     const ch1 = Challenge.fromResponse(res1);
-    const openAmount = BigInt(ch1.request.amount);
-    const openSig = await signVoucher(CHANNEL_ID, openAmount);
-    const openCred = Credential.from({
-      challenge: ch1,
-      payload: { action: 'open', channelId: CHANNEL_ID, cumulativeAmount: openAmount.toString(), signature: openSig, txHash: `0x${'aa'.repeat(32)}` },
-    });
-    await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(openCred) } });
+    const openCred = await client.createCredential({ challenge: ch1 });
+    const openRes = await fetch(`${baseUrl}/session`, { headers: { Authorization: openCred } });
+    expect(openRes.status).toBe(200);
 
-    // Voucher
+    // Voucher — same client, maintains channel state
     const res2 = await fetch(`${baseUrl}/session`);
     const ch2 = Challenge.fromResponse(res2);
-    const voucherAmount = openAmount * 2n;
-    const voucherSig = await signVoucher(CHANNEL_ID, voucherAmount);
-    const voucherCred = Credential.from({
-      challenge: ch2,
-      payload: { action: 'voucher', channelId: CHANNEL_ID, cumulativeAmount: voucherAmount.toString(), signature: voucherSig },
-    });
-
-    const voucherRes = await fetch(`${baseUrl}/session`, {
-      headers: { Authorization: Credential.serialize(voucherCred) },
-    });
+    const voucherCred = await client.createCredential({ challenge: ch2 });
+    const voucherRes = await fetch(`${baseUrl}/session`, { headers: { Authorization: voucherCred } });
     expect(voucherRes.status).toBe(200);
   });
 
-  it('3 vouchers on same channel', async () => {
+  it('3 consecutive vouchers on same channel', async () => {
+    const client = createTestClient();
+
+    // Open
     const res1 = await fetch(`${baseUrl}/session`);
     const ch1 = Challenge.fromResponse(res1);
-    const tickAmount = BigInt(ch1.request.amount);
+    const openCred = await client.createCredential({ challenge: ch1 });
+    await fetch(`${baseUrl}/session`, { headers: { Authorization: openCred } });
 
-    const openSig = await signVoucher(CHANNEL_ID, tickAmount);
-    const openCred = Credential.from({
-      challenge: ch1,
-      payload: { action: 'open', channelId: CHANNEL_ID, cumulativeAmount: tickAmount.toString(), signature: openSig, txHash: `0x${'aa'.repeat(32)}` },
-    });
-    await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(openCred) } });
-
-    for (let i = 2; i <= 4; i++) {
+    // 3 vouchers
+    for (let i = 0; i < 3; i++) {
       const res = await fetch(`${baseUrl}/session`);
       const ch = Challenge.fromResponse(res);
-      const cum = tickAmount * BigInt(i);
-      const sig = await signVoucher(CHANNEL_ID, cum);
-      const cred = Credential.from({
-        challenge: ch,
-        payload: { action: 'voucher', channelId: CHANNEL_ID, cumulativeAmount: cum.toString(), signature: sig },
-      });
-      const result = await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(cred) } });
+      const cred = await client.createCredential({ challenge: ch });
+      const result = await fetch(`${baseUrl}/session`, { headers: { Authorization: cred } });
       expect(result.status).toBe(200);
     }
   });
 
-  it('close → 200 + channel finalized', async () => {
-    const res1 = await fetch(`${baseUrl}/session`);
-    const ch1 = Challenge.fromResponse(res1);
-    const tickAmount = BigInt(ch1.request.amount);
+  it('close settles channel and calls writeContract', async () => {
+    const client = createTestClient();
 
     // Open
-    const openSig = await signVoucher(CHANNEL_ID, tickAmount);
-    const openCred = Credential.from({
-      challenge: ch1,
-      payload: { action: 'open', channelId: CHANNEL_ID, cumulativeAmount: tickAmount.toString(), signature: openSig, txHash: `0x${'aa'.repeat(32)}` },
-    });
-    await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(openCred) } });
+    const res1 = await fetch(`${baseUrl}/session`);
+    const ch1 = Challenge.fromResponse(res1);
+    const openCred = await client.createCredential({ challenge: ch1 });
+    await fetch(`${baseUrl}/session`, { headers: { Authorization: openCred } });
 
-    // Close
-    mocks.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
-    const res2 = await fetch(`${baseUrl}/session`);
-    const ch2 = Challenge.fromResponse(res2);
-    const closeSig = await signVoucher(CHANNEL_ID, tickAmount);
-    const closeCred = Credential.from({
-      challenge: ch2,
-      payload: { action: 'close', channelId: CHANNEL_ID, cumulativeAmount: tickAmount.toString(), signature: closeSig },
+    // Extract channelId
+    const parsed = decodeCredential(openCred);
+    const channelId = parsed.payload.channelId;
+    const cumulativeAmount = BigInt(parsed.payload.cumulativeAmount);
+
+    // Build close credential (client doesn't have a close method, so build manually)
+    const { createWalletClient, http: viemHttp } = await import('viem');
+    const walletClient = createWalletClient({ account: TEST_ACCOUNT, chain: hederaTestnet, transport: viemHttp('http://localhost:1') });
+    const closeSig = await walletClient.signTypedData({
+      account: TEST_ACCOUNT,
+      domain: { name: VOUCHER_DOMAIN_NAME, version: VOUCHER_DOMAIN_VERSION, chainId: 296, verifyingContract: ESCROW },
+      types: VOUCHER_TYPES,
+      primaryType: 'Voucher',
+      message: { channelId, cumulativeAmount },
     });
-    const closeRes = await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(closeCred) } });
+
+    serverMocks.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
+
+    const closeRes1 = await fetch(`${baseUrl}/session`);
+    const closeCh = Challenge.fromResponse(closeRes1);
+    const closeCred = Credential.from({
+      challenge: closeCh,
+      payload: { action: 'close', channelId, cumulativeAmount: cumulativeAmount.toString(), signature: closeSig },
+    });
+
+    const closeRes = await fetch(`${baseUrl}/session`, {
+      headers: { Authorization: Credential.serialize(closeCred) },
+    });
     expect(closeRes.status).toBe(200);
-    expect(mocks.walletClient.writeContract).toHaveBeenCalled();
+    expect(serverMocks.walletClient.writeContract).toHaveBeenCalled();
   });
 
-  it('full lifecycle: open → voucher × 3 → close → post-close rejected', async () => {
-    const res1 = await fetch(`${baseUrl}/session`);
-    const ch1 = Challenge.fromResponse(res1);
-    const tickAmount = BigInt(ch1.request.amount);
+  it('full lifecycle: open → fetch × 3 → close → post-close rejected', async () => {
+    const client = createTestClient();
 
     // Open
-    const openSig = await signVoucher(CHANNEL_ID, tickAmount);
-    const openCred = Credential.from({
-      challenge: ch1,
-      payload: { action: 'open', channelId: CHANNEL_ID, cumulativeAmount: tickAmount.toString(), signature: openSig, txHash: `0x${'aa'.repeat(32)}` },
-    });
-    const openRes = await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(openCred) } });
+    const res1 = await fetch(`${baseUrl}/session`);
+    const ch1 = Challenge.fromResponse(res1);
+    const openCred = await client.createCredential({ challenge: ch1 });
+    const openRes = await fetch(`${baseUrl}/session`, { headers: { Authorization: openCred } });
     expect(openRes.status).toBe(200);
 
     // 3 vouchers
-    for (let i = 2; i <= 4; i++) {
+    for (let i = 0; i < 3; i++) {
       const res = await fetch(`${baseUrl}/session`);
       const ch = Challenge.fromResponse(res);
-      const cum = tickAmount * BigInt(i);
-      const sig = await signVoucher(CHANNEL_ID, cum);
-      const cred = Credential.from({
-        challenge: ch,
-        payload: { action: 'voucher', channelId: CHANNEL_ID, cumulativeAmount: cum.toString(), signature: sig },
-      });
-      const result = await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(cred) } });
+      const cred = await client.createCredential({ challenge: ch });
+      const result = await fetch(`${baseUrl}/session`, { headers: { Authorization: cred } });
       expect(result.status).toBe(200);
     }
 
     // Close
-    mocks.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
+    const parsed = decodeCredential(openCred);
+    const channelId = parsed.payload.channelId;
+    const tickAmount = BigInt(ch1.request.amount);
+    const finalCum = tickAmount * 4n; // 1 open + 3 vouchers
+
+    const { createWalletClient, http: viemHttp } = await import('viem');
+    const walletClient = createWalletClient({ account: TEST_ACCOUNT, chain: hederaTestnet, transport: viemHttp('http://localhost:1') });
+    const closeSig = await walletClient.signTypedData({
+      account: TEST_ACCOUNT,
+      domain: { name: VOUCHER_DOMAIN_NAME, version: VOUCHER_DOMAIN_VERSION, chainId: 296, verifyingContract: ESCROW },
+      types: VOUCHER_TYPES,
+      primaryType: 'Voucher',
+      message: { channelId, cumulativeAmount: finalCum },
+    });
+
+    serverMocks.publicClient.waitForTransactionReceipt.mockResolvedValue({ status: 'success' });
+
     const closeRes1 = await fetch(`${baseUrl}/session`);
     const closeCh = Challenge.fromResponse(closeRes1);
-    const finalCum = tickAmount * 4n;
-    const closeSig = await signVoucher(CHANNEL_ID, finalCum);
     const closeCred = Credential.from({
       challenge: closeCh,
-      payload: { action: 'close', channelId: CHANNEL_ID, cumulativeAmount: finalCum.toString(), signature: closeSig },
+      payload: { action: 'close', channelId, cumulativeAmount: finalCum.toString(), signature: closeSig },
     });
-    const closeRes = await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(closeCred) } });
+    const closeRes = await fetch(`${baseUrl}/session`, {
+      headers: { Authorization: Credential.serialize(closeCred) },
+    });
     expect(closeRes.status).toBe(200);
 
-    // Post-close voucher → rejected (channel finalized)
+    // Post-close: voucher on finalized channel → 402
     const postRes = await fetch(`${baseUrl}/session`);
     const postCh = Challenge.fromResponse(postRes);
-    const postSig = await signVoucher(CHANNEL_ID, finalCum + tickAmount);
-    const postCred = Credential.from({
-      challenge: postCh,
-      payload: { action: 'voucher', channelId: CHANNEL_ID, cumulativeAmount: (finalCum + tickAmount).toString(), signature: postSig },
+    const postCred = await client.createCredential({ challenge: postCh });
+    const postResult = await fetch(`${baseUrl}/session`, {
+      headers: { Authorization: postCred },
     });
-    const postResult = await fetch(`${baseUrl}/session`, { headers: { Authorization: Credential.serialize(postCred) } });
     expect(postResult.status).toBe(402);
   });
 });
