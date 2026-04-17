@@ -1,6 +1,6 @@
 {
   "name": "hak-mppx-hedera-plugin",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "MIT",
   "description": "Machine Payments Protocol (MPP) plugin for Hedera Agent Kit — charge and session payments with USDC",
   "type": "module",
