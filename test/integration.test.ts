@@ -28,7 +28,7 @@ const TEST_KEY = generatePrivateKey();
 const TEST_ACCOUNT = privateKeyToAccount(TEST_KEY);
 const RECIPIENT = TEST_ACCOUNT.address;
 const TOKEN = '0x0000000000000000000000000000000000001549' as `0x${string}`;
-const ESCROW = '0x401b6dc30221823361E4876f5C502e37249D84C3' as `0x${string}`;
+const ESCROW = '0x8Aaf6690C2a6397d595F97E224fC19759De6fdaE' as `0x${string}`;
 const SERVER_ID = 'integration-test.local';
 const SECRET_KEY = 'integration-test-secret-key-32chars-min!!';
 
