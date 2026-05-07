@@ -94,7 +94,22 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
     }
 
     // 3. Check amount is within budget
-    const requestedAmount = BigInt(challenge.request.amount);
+    const amountStr = challenge.request.amount as string | undefined;
+    if (!amountStr) {
+      return {
+        raw: { error: 'Missing amount in challenge', detail: JSON.stringify(challenge.request) },
+        humanMessage: `Server 402 challenge is missing the required 'amount' field.`,
+      };
+    }
+    let requestedAmount: bigint;
+    try {
+      requestedAmount = BigInt(amountStr);
+    } catch {
+      return {
+        raw: { error: 'Invalid amount in challenge', amount: amountStr },
+        humanMessage: `Server 402 challenge has an invalid amount: "${amountStr}".`,
+      };
+    }
     if (requestedAmount > BigInt(maxAmount)) {
       return {
         raw: { error: 'Amount exceeds budget', requested: challenge.request.amount, maxAmount },
