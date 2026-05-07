@@ -43,6 +43,15 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
   }
 
   async coreAction(args: SessionOpenInput, context: Context, _client: Client) {
+    if ((context as any).mode === 'returnBytes') {
+      throw new Error(
+        `${TOOL_NAME} does not support AgentMode.RETURN_BYTES. ` +
+        'MPP session open requires direct transaction signing with a private key ' +
+        '— RETURN_BYTES mode cannot be used because opening a channel requires an ' +
+        'on-chain ERC-20 approve + escrow deposit that must be signed immediately.',
+      );
+    }
+
     const mppxContext = context as unknown as MppxContext;
     const { url, deposit } = args;
 

@@ -59,6 +59,8 @@ const context = {
 };
 ```
 
+> **Note:** `AgentMode.RETURN_BYTES` is **not supported**. All four tools require a private key for direct transaction signing (native Hedera transfers, ERC-20 approvals, EIP-712 vouchers). RETURN_BYTES mode serializes unsigned transaction bytes for external signing, which is fundamentally incompatible with the MPP payment flows. Each tool will throw a descriptive error if RETURN_BYTES mode is detected.
+
 ## Hooks & policies (Agent Kit v4)
 
 All tools extend `BaseTool`, so they support Agent Kit v4 hooks and policies out of the box. This is especially useful for a payments plugin — you can enforce spend limits, log transactions to HCS, or add custom validation.

@@ -42,6 +42,15 @@ export class SessionFetchTool extends BaseTool<SessionFetchInput, SessionFetchIn
   }
 
   async coreAction(args: SessionFetchInput, _context: Context, _client: Client) {
+    if ((_context as any).mode === 'returnBytes') {
+      throw new Error(
+        `${TOOL_NAME} does not support AgentMode.RETURN_BYTES. ` +
+        'MPP session fetch requires direct EIP-712 voucher signing with a private key ' +
+        '— RETURN_BYTES mode cannot be used because each request signs an off-chain ' +
+        'voucher that must be submitted to the server immediately.',
+      );
+    }
+
     const { url, method, body } = args;
 
     // Find the session for this URL

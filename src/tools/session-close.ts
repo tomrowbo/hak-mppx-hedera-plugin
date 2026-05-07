@@ -45,6 +45,15 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
   }
 
   async coreAction(args: SessionCloseInput, context: Context, _client: Client) {
+    if ((context as any).mode === 'returnBytes') {
+      throw new Error(
+        `${TOOL_NAME} does not support AgentMode.RETURN_BYTES. ` +
+        'MPP session close requires direct EIP-712 signing with a private key ' +
+        '— RETURN_BYTES mode cannot be used because closing a channel requires signing ' +
+        'a close voucher and submitting it to the server for on-chain settlement.',
+      );
+    }
+
     const mppxContext = context as unknown as MppxContext;
     const { url } = args;
 

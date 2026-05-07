@@ -49,6 +49,15 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
   }
 
   async coreAction(args: ChargeFetchInput, context: Context, client: Client) {
+    if ((context as any).mode === 'returnBytes') {
+      throw new Error(
+        `${TOOL_NAME} does not support AgentMode.RETURN_BYTES. ` +
+        'MPP charge payments require direct transaction signing with a private key ' +
+        '— RETURN_BYTES mode cannot be used because the charge flow executes a native ' +
+        'Hedera TransferTransaction that must be signed and submitted immediately.',
+      );
+    }
+
     const mppxContext = context as unknown as MppxContext;
     const { url, method, body, maxAmount } = args;
 
