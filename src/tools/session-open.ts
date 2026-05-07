@@ -53,6 +53,12 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
     }
 
     const mppxContext = context as unknown as MppxContext;
+    if (!mppxContext.privateKey) {
+      return {
+        raw: { error: 'Missing privateKey' },
+        humanMessage: 'context.privateKey is required for MPP session operations. Pass your ECDSA private key as a 0x-prefixed hex string.',
+      };
+    }
     const { url, deposit } = args;
 
     // Check if session already exists

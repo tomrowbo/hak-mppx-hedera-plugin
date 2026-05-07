@@ -55,6 +55,12 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
     }
 
     const mppxContext = context as unknown as MppxContext;
+    if (!mppxContext.privateKey) {
+      return {
+        raw: { error: 'Missing privateKey' },
+        humanMessage: 'context.privateKey is required for MPP session close. Pass your ECDSA private key as a 0x-prefixed hex string.',
+      };
+    }
     const { url } = args;
 
     const session = sessionStore.get(url);
@@ -100,16 +106,35 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
     }
 
     // Parse the credential to get channelId and cumulative amount
-    const b64 = lastCredential.replace('Payment ', '');
-    const parsed = JSON.parse(Buffer.from(b64, 'base64url').toString());
-    const channelId = parsed.payload.channelId;
-    const cumulativeAmount = BigInt(parsed.payload.cumulativeAmount);
+    let channelId: string;
+    let cumulativeAmount: bigint;
+    try {
+      const b64 = lastCredential.replace('Payment ', '');
+      const parsed = JSON.parse(Buffer.from(b64, 'base64url').toString());
+      channelId = parsed.payload.channelId;
+      cumulativeAmount = BigInt(parsed.payload.cumulativeAmount);
+      if (!channelId) throw new Error('channelId missing from credential payload');
+    } catch (e: any) {
+      sessionStore.remove(url);
+      return {
+        raw: { error: 'Failed to parse credential', detail: e.message },
+        humanMessage: `Failed to parse session credential for close: ${e.message}. Session removed locally — the channel may need manual settlement.`,
+      };
+    }
 
     // 3. Sign a close voucher (EIP-712)
     const network = resolveNetwork(mppxContext);
     const account = contextToViemAccount(mppxContext);
     const chain = resolveChain(network);
     const escrow = challenge.request.methodDetails?.escrowContract ?? challenge.request.escrowContract;
+
+    if (!escrow) {
+      sessionStore.remove(url);
+      return {
+        raw: { error: 'Escrow contract not found', url },
+        humanMessage: `Cannot close: escrow contract address not found in server challenge. Session removed locally — the channel may need manual settlement.`,
+      };
+    }
 
     const walletClient = createWalletClient({ account, chain, transport: http() });
 
@@ -127,8 +152,24 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
     });
 
     // 4. Get a fresh challenge for the close action
-    const closeChallengeResponse = await fetch(url);
-    const closeChallenge = Challenge.fromResponse(closeChallengeResponse);
+    let closeChallenge;
+    try {
+      const closeChallengeResponse = await fetch(url);
+      if (closeChallengeResponse.status !== 402) {
+        sessionStore.remove(url);
+        return {
+          raw: { error: 'Close challenge failed', status: closeChallengeResponse.status },
+          humanMessage: `Failed to get fresh challenge for close (status ${closeChallengeResponse.status}). Session removed locally.`,
+        };
+      }
+      closeChallenge = Challenge.fromResponse(closeChallengeResponse);
+    } catch (e: any) {
+      sessionStore.remove(url);
+      return {
+        raw: { error: 'Close challenge fetch failed', detail: e.message },
+        humanMessage: `Failed to fetch close challenge: ${e.message}. Session removed locally — the channel may need manual settlement.`,
+      };
+    }
 
     // 5. Build and send close credential
     const closeCred = Credential.from({

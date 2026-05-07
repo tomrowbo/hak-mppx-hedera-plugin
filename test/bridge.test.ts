@@ -39,7 +39,7 @@ describe('bridge', () => {
 
     it('throws when no operator account ID', () => {
       const client = mockClient();
-      expect(() => getOperatorId(client as any)).toThrow('Cannot extract operator account ID');
+      expect(() => getOperatorId(client as any)).toThrow('Cannot determine operator account ID');
     });
   });
 

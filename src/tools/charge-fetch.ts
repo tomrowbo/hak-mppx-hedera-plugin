@@ -59,6 +59,12 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
     }
 
     const mppxContext = context as unknown as MppxContext;
+    if (!mppxContext.privateKey) {
+      return {
+        raw: { error: 'Missing privateKey' },
+        humanMessage: 'context.privateKey is required for MPP charge operations. Pass your ECDSA private key as a 0x-prefixed hex string.',
+      };
+    }
     const { url, method, body, maxAmount } = args;
 
     // 1. Initial request
@@ -99,7 +105,7 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
     // 4. Create charge handler and pay
     const network = resolveNetwork(mppxContext);
     const chargeHandler = charge({
-      operatorId: getOperatorId(client),
+      operatorId: getOperatorId(client, mppxContext),
       operatorKey: getPrivateKey(mppxContext),
       network,
     });

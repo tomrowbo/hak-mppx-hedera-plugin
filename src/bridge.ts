@@ -16,6 +16,7 @@ import { hederaTestnet, hederaMainnet } from 'mppx-hedera';
 export interface MppxContext {
   network?: string;
   privateKey?: string; // 0x-prefixed hex ECDSA key for viem bridge
+  accountId?: string;  // fallback operator account ID (e.g. '0.0.12345')
   [key: string]: unknown;
 }
 
@@ -53,12 +54,13 @@ export function contextToViemClients(context: MppxContext) {
 }
 
 /**
- * Get the operator account ID from the Hiero SDK Client.
+ * Get the operator account ID from the Hiero SDK Client, falling back to context.accountId.
  */
-export function getOperatorId(client: Client): string {
+export function getOperatorId(client: Client, context?: MppxContext): string {
   const id = (client as any).operatorAccountId ?? (client as any)._operator?.accountId;
-  if (!id) throw new Error('Cannot extract operator account ID from Hiero SDK Client');
-  return id.toString();
+  if (id) return id.toString();
+  if (context?.accountId) return context.accountId;
+  throw new Error('Cannot determine operator account ID. Provide it via client.setOperator() or context.accountId.');
 }
 
 /**
