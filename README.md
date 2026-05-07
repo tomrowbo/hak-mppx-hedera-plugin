@@ -59,6 +59,39 @@ const context = {
 };
 ```
 
+## Hooks & policies (Agent Kit v4)
+
+All tools extend `BaseTool`, so they support Agent Kit v4 hooks and policies out of the box. This is especially useful for a payments plugin — you can enforce spend limits, log transactions to HCS, or add custom validation.
+
+```typescript
+import { AbstractHook } from '@hashgraph/hedera-agent-kit';
+
+class PaymentAuditHook extends AbstractHook {
+  name = 'payment-audit';
+  description = 'Log all MPP payments to console';
+  relevantTools = [
+    'mppx_hedera_charge_fetch_tool',
+    'mppx_hedera_session_open_tool',
+  ];
+
+  async postCoreActionHook({ coreActionResult, normalisedParams }) {
+    console.log('Payment executed:', { params: normalisedParams, result: coreActionResult });
+  }
+}
+
+const context = {
+  network: 'testnet',
+  privateKey: '0x...',
+  hooks: [new PaymentAuditHook()],
+};
+```
+
+Tool classes are also exported for direct use or subclassing:
+
+```typescript
+import { ChargeFetchTool, SessionOpenTool, SessionFetchTool, SessionCloseTool } from 'hak-mppx-hedera-plugin';
+```
+
 ## Tools
 
 ### `mppx_hedera_charge_fetch_tool`
