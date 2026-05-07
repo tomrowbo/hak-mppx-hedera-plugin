@@ -10,6 +10,7 @@ import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
 import { hederaSession } from 'mppx-hedera/client';
+import { HEDERA_STREAM_CHANNEL_TESTNET, HEDERA_STREAM_CHANNEL_MAINNET } from 'mppx-hedera';
 import { contextToViemAccount, resolveNetwork, type MppxContext } from '../bridge.js';
 import * as sessionStore from '../session-store.js';
 
@@ -99,7 +100,13 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
     const network = resolveNetwork(mppxContext);
     const account = contextToViemAccount(mppxContext);
 
-    const handler = hederaSession({ account, deposit });
+    // Pin escrow to the known deployed contract to prevent a malicious server
+    // from redirecting deposits to an attacker-controlled contract.
+    const knownEscrow = network === 'mainnet'
+      ? HEDERA_STREAM_CHANNEL_MAINNET
+      : HEDERA_STREAM_CHANNEL_TESTNET;
+
+    const handler = hederaSession({ account, deposit, escrowContract: knownEscrow });
 
     // 3. Open channel (approve + deposit on-chain)
     let credential;
@@ -125,7 +132,6 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
     }
 
     // 5. Store session for future fetch/close calls
-    const escrowContract = challenge.request.methodDetails?.escrowContract ?? challenge.request.escrowContract;
     sessionStore.set(url, {
       handler,
       url,
@@ -133,7 +139,7 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
       network,
       openedAt: new Date().toISOString(),
       lastCredential: credential,
-      escrowContract,
+      escrowContract: knownEscrow,
     });
 
     return {

@@ -180,6 +180,23 @@ describe('mppx_hedera_session_fetch_tool', () => {
     expect(result.raw.error).toContain('RETURN_BYTES');
   });
 
+  it('rejects when per-request amount exceeds deposit', async () => {
+    seedSession();
+
+    // Mock challenge with amount larger than deposit (deposit is '0.10' = 100000 base units)
+    mockFromResponse.mockReturnValue({
+      method: 'hedera',
+      intent: 'session',
+      request: { amount: '200000', currency: '0.0.5449' },
+    });
+
+    const result = await execute({ url: TEST_URL, method: 'GET' });
+
+    expect(result.raw.error).toBe('Per-request amount exceeds deposit');
+    expect(result.raw.requested).toBe('200000');
+    expect(result.humanMessage).toContain('malicious server');
+  });
+
   it('multiple fetches work (3 consecutive calls)', async () => {
     seedSession();
 

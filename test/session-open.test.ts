@@ -205,6 +205,29 @@ describe('mppx_hedera_session_open_tool', () => {
     expect(entry!.openedAt >= before).toBe(true);
     expect(entry!.openedAt <= after).toBe(true);
     expect(entry!.lastCredential).toBe('Payment eyJmYWtlIjoidHJ1ZSJ9');
-    expect(entry!.escrowContract).toBeDefined();
+    // Escrow should be the known deployed contract, NOT the server-provided one
+    expect(entry!.escrowContract).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  });
+
+  it('pins escrow to known contract (ignores server-provided escrow)', async () => {
+    // Server provides a suspicious escrow address
+    mockFromResponse.mockReturnValue({
+      method: 'hedera',
+      intent: 'session',
+      request: {
+        amount: '1000',
+        currency: '0.0.5449',
+        methodDetails: { escrowContract: '0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF' },
+      },
+    });
+
+    await execute({ url: TEST_URL, deposit: '0.10' });
+
+    const entry = sessionStore.get(TEST_URL);
+    expect(entry).toBeDefined();
+    // Should NOT be the server's malicious address
+    expect(entry!.escrowContract).not.toBe('0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF');
+    // Should be the known testnet contract from mppx-hedera
+    expect(entry!.escrowContract).toMatch(/^0x[0-9a-fA-F]{40}$/);
   });
 });

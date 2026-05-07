@@ -83,7 +83,21 @@ export class SessionFetchTool extends BaseTool<SessionFetchInput, SessionFetchIn
       };
     }
 
-    // 2. Sign voucher using existing session (off-chain, <1ms)
+    // 2. Validate per-request amount is reasonable
+    //    Prevents a malicious server from demanding the entire deposit in one call.
+    const requestAmount = challenge.request?.amount as string | undefined;
+    if (requestAmount) {
+      const depositBaseUnits = BigInt(Math.floor(parseFloat(session.deposit) * 1e6));
+      const requested = BigInt(requestAmount);
+      if (requested > depositBaseUnits) {
+        return {
+          raw: { error: 'Per-request amount exceeds deposit', requested: requestAmount, deposit: session.deposit },
+          humanMessage: `Server demands ${requestAmount} base units per request, which exceeds the total deposit of ${session.deposit} USDC. This may be a malicious server.`,
+        };
+      }
+    }
+
+    // 3. Sign voucher using existing session (off-chain, <1ms)
     let credential;
     try {
       credential = await session.handler.createCredential({ challenge });
