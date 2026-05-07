@@ -11,11 +11,11 @@
  * - mppx_hedera_session_close_tool — settle and close channel (refund unused deposit)
  */
 
-import type { Plugin, Tool, Context } from '@hashgraph/hedera-agent-kit';
-import chargeFetchTool, { TOOL_NAME as CHARGE_FETCH } from './tools/charge-fetch.js';
-import sessionOpenTool, { TOOL_NAME as SESSION_OPEN } from './tools/session-open.js';
-import sessionFetchTool, { TOOL_NAME as SESSION_FETCH } from './tools/session-fetch.js';
-import sessionCloseTool, { TOOL_NAME as SESSION_CLOSE } from './tools/session-close.js';
+import type { Plugin, Context } from '@hashgraph/hedera-agent-kit';
+import { chargeFetchTool, TOOL_NAME as CHARGE_FETCH } from './tools/charge-fetch.js';
+import { sessionOpenTool, TOOL_NAME as SESSION_OPEN } from './tools/session-open.js';
+import { sessionFetchTool, TOOL_NAME as SESSION_FETCH } from './tools/session-fetch.js';
+import { sessionCloseTool, TOOL_NAME as SESSION_CLOSE } from './tools/session-close.js';
 
 export const mppxHederaPluginToolNames = {
   CHARGE_FETCH,
@@ -26,18 +26,24 @@ export const mppxHederaPluginToolNames = {
 
 export const mppxHederaPlugin: Plugin = {
   name: 'hak-mppx-hedera-plugin',
-  version: '1.0.2',
+  version: '1.1.0',
   description: 'Machine Payments Protocol (MPP) for Hedera — charge and session payments with USDC. Enables AI agents to pay for 402-protected APIs.',
-  tools: (context: Context): Tool[] => [
-    chargeFetchTool(context) as unknown as Tool,
-    sessionOpenTool(context) as unknown as Tool,
-    sessionFetchTool(context) as unknown as Tool,
-    sessionCloseTool(context) as unknown as Tool,
+  tools: (_context: Context) => [
+    chargeFetchTool,
+    sessionOpenTool,
+    sessionFetchTool,
+    sessionCloseTool,
   ],
 };
 
 // Default export for convenience
 export default mppxHederaPlugin;
+
+// Re-export tool classes for advanced usage
+export { ChargeFetchTool } from './tools/charge-fetch.js';
+export { SessionOpenTool } from './tools/session-open.js';
+export { SessionFetchTool } from './tools/session-fetch.js';
+export { SessionCloseTool } from './tools/session-close.js';
 
 // Re-export session store for advanced usage
 export * as sessionStore from './session-store.js';

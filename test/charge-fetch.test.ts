@@ -51,11 +51,9 @@ function mockNon402Response(status = 200, body = '{"free":"data"}') {
 
 describe('charge-fetch tool', () => {
   const originalFetch = globalThis.fetch;
-  let tool: ReturnType<typeof chargeFetchTool>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    tool = chargeFetchTool(context);
   });
 
   afterEach(() => {
@@ -65,7 +63,7 @@ describe('charge-fetch tool', () => {
   it('returns data directly when response is not 402', async () => {
     globalThis.fetch = vi.fn(async () => mockNon402Response(200, '{"free":"data"}'));
 
-    const result = await tool.execute(mockClient as any, context, {
+    const result = await chargeFetchTool.execute(mockClient as any, context, {
       url: 'https://api.example.com/data',
       method: 'GET',
       maxAmount: '100000',
@@ -85,7 +83,7 @@ describe('charge-fetch tool', () => {
       return mock200Response('{"paid":"content"}');
     });
 
-    const result = await tool.execute(mockClient as any, context, {
+    const result = await chargeFetchTool.execute(mockClient as any, context, {
       url: 'https://api.example.com/premium',
       method: 'GET',
       maxAmount: '100000',
@@ -102,7 +100,7 @@ describe('charge-fetch tool', () => {
   it('returns error without paying when amount exceeds maxAmount', async () => {
     globalThis.fetch = vi.fn(async () => mock402Response('200000'));
 
-    const result = await tool.execute(mockClient as any, context, {
+    const result = await chargeFetchTool.execute(mockClient as any, context, {
       url: 'https://api.example.com/expensive',
       method: 'GET',
       maxAmount: '100000',
@@ -119,7 +117,7 @@ describe('charge-fetch tool', () => {
     // Return a 402 with no WWW-Authenticate header — Challenge.fromResponse will throw
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 402 }));
 
-    const result = await tool.execute(mockClient as any, context, {
+    const result = await chargeFetchTool.execute(mockClient as any, context, {
       url: 'https://api.example.com/broken',
       method: 'GET',
       maxAmount: '100000',
@@ -139,7 +137,7 @@ describe('charge-fetch tool', () => {
       }),
     } as any);
 
-    const result = await tool.execute(mockClient as any, context, {
+    const result = await chargeFetchTool.execute(mockClient as any, context, {
       url: 'https://api.example.com/pay-fail',
       method: 'GET',
       maxAmount: '100000',
@@ -158,7 +156,7 @@ describe('charge-fetch tool', () => {
       return new Response('Server Error', { status: 500 });
     });
 
-    const result = await tool.execute(mockClient as any, context, {
+    const result = await chargeFetchTool.execute(mockClient as any, context, {
       url: 'https://api.example.com/retry-fail',
       method: 'GET',
       maxAmount: '100000',
@@ -178,7 +176,7 @@ describe('charge-fetch tool', () => {
       return mock200Response('{"posted":"ok"}');
     });
 
-    const result = await tool.execute(mockClient as any, context, {
+    const result = await chargeFetchTool.execute(mockClient as any, context, {
       url: 'https://api.example.com/submit',
       method: 'POST',
       body: '{"input":"test"}',
@@ -200,8 +198,7 @@ describe('charge-fetch tool', () => {
 
   it('default maxAmount is 100000', () => {
     // The zod schema default should be '100000'
-    const schema = tool.parameters;
-    const parsed = schema.parse({ url: 'https://example.com' });
+    const parsed = chargeFetchTool.parameters.parse({ url: 'https://example.com' });
     expect(parsed.maxAmount).toBe('100000');
   });
 });

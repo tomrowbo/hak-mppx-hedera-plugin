@@ -5,10 +5,10 @@
  * Signs an off-chain EIP-712 voucher (sub-millisecond, no gas) and sends the request.
  */
 
+import { BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
 import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
-import type { MppxContext } from '../bridge.js';
 import * as sessionStore from '../session-store.js';
 
 export const TOOL_NAME = 'mppx_hedera_session_fetch_tool';
@@ -29,73 +29,87 @@ const parameters = z.object({
   body: z.string().optional().describe('Request body for POST requests'),
 });
 
-type Context = MppxContext;
+type SessionFetchInput = z.infer<typeof parameters>;
 
-async function execute(client: Client, context: Context, params: z.infer<typeof parameters>) {
-  const { url, method, body } = params;
+export class SessionFetchTool extends BaseTool<SessionFetchInput, SessionFetchInput> {
+  method = TOOL_NAME;
+  name = 'MPP Session Fetch';
+  description = description;
+  parameters = parameters;
 
-  // Find the session for this URL
-  const session = sessionStore.get(url);
-  if (!session) {
+  async normalizeParams(params: SessionFetchInput, _context: Context, _client: Client): Promise<SessionFetchInput> {
+    return parameters.parse(params);
+  }
+
+  async coreAction(args: SessionFetchInput, _context: Context, _client: Client) {
+    const { url, method, body } = args;
+
+    // Find the session for this URL
+    const session = sessionStore.get(url);
+    if (!session) {
+      return {
+        raw: { error: 'No session open', url },
+        humanMessage: `No payment session is open for ${url}. Use mppx_hedera_session_open_tool first.`,
+      };
+    }
+
+    // 1. Get a new challenge from the server
+    const challengeResponse = await fetch(url, { method: 'GET' });
+    if (challengeResponse.status !== 402) {
+      // Server didn't require payment — return the response directly
+      const data = await challengeResponse.text();
+      return {
+        raw: { status: challengeResponse.status, data, paid: false },
+        humanMessage: `Response from ${url} (status ${challengeResponse.status}) — no payment needed.`,
+      };
+    }
+
+    let challenge;
+    try {
+      challenge = Challenge.fromResponse(challengeResponse);
+    } catch (e: any) {
+      return {
+        raw: { error: 'Failed to parse challenge', detail: e.message },
+        humanMessage: `Failed to parse 402 challenge: ${e.message}`,
+      };
+    }
+
+    // 2. Sign voucher using existing session (off-chain, <1ms)
+    let credential;
+    try {
+      credential = await session.handler.createCredential({ challenge });
+    } catch (e: any) {
+      return {
+        raw: { error: 'Voucher signing failed', detail: e.message },
+        humanMessage: `Failed to sign voucher: ${e.message}. The session may be exhausted — try mppx_hedera_session_close_tool and reopen with a larger deposit.`,
+      };
+    }
+
+    // 3. Send authorized request
+    const paidResponse = await fetch(url, {
+      method,
+      ...(body ? { body } : {}),
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        Authorization: credential,
+      },
+    });
+
+    const data = await paidResponse.text();
     return {
-      raw: { error: 'No session open', url },
-      humanMessage: `No payment session is open for ${url}. Use mppx_hedera_session_open_tool first.`,
+      raw: { status: paidResponse.status, data, paid: true },
+      humanMessage: `Fetched ${url} using session voucher (off-chain, no gas).`,
     };
   }
 
-  // 1. Get a new challenge from the server
-  const challengeResponse = await fetch(url, { method: 'GET' });
-  if (challengeResponse.status !== 402) {
-    // Server didn't require payment — return the response directly
-    const data = await challengeResponse.text();
-    return {
-      raw: { status: challengeResponse.status, data, paid: false },
-      humanMessage: `Response from ${url} (status ${challengeResponse.status}) — no payment needed.`,
-    };
+  override async shouldSecondaryAction(_coreActionResult: unknown, _context: Context) {
+    return false;
   }
 
-  let challenge;
-  try {
-    challenge = Challenge.fromResponse(challengeResponse);
-  } catch (e: any) {
-    return {
-      raw: { error: 'Failed to parse challenge', detail: e.message },
-      humanMessage: `Failed to parse 402 challenge: ${e.message}`,
-    };
+  async secondaryAction(_request: unknown, _client: Client, _context: Context) {
+    return null;
   }
-
-  // 2. Sign voucher using existing session (off-chain, <1ms)
-  let credential;
-  try {
-    credential = await session.handler.createCredential({ challenge });
-  } catch (e: any) {
-    return {
-      raw: { error: 'Voucher signing failed', detail: e.message },
-      humanMessage: `Failed to sign voucher: ${e.message}. The session may be exhausted — try mppx_hedera_session_close_tool and reopen with a larger deposit.`,
-    };
-  }
-
-  // 3. Send authorized request
-  const paidResponse = await fetch(url, {
-    method,
-    ...(body ? { body } : {}),
-    headers: {
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-      Authorization: credential,
-    },
-  });
-
-  const data = await paidResponse.text();
-  return {
-    raw: { status: paidResponse.status, data, paid: true },
-    humanMessage: `Fetched ${url} using session voucher (off-chain, no gas).`,
-  };
 }
 
-export default (context: Context = {}) => ({
-  method: TOOL_NAME,
-  name: 'MPP Session Fetch',
-  description,
-  parameters,
-  execute,
-});
+export const sessionFetchTool = new SessionFetchTool();
+export default sessionFetchTool;

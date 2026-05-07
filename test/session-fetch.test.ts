@@ -94,8 +94,7 @@ describe('mppx_hedera_session_fetch_tool', () => {
     );
 
     const mod = await import('../src/tools/session-fetch.js');
-    const tool = mod.default(context);
-    execute = (params: any) => tool.execute(mockClient, context, params);
+    execute = (params: any) => mod.default.execute(mockClient, context, params);
   });
 
   it('existing session signs voucher and returns data', async () => {
