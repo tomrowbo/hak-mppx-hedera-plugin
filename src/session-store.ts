@@ -21,6 +21,8 @@ export interface SessionEntry {
   openedAt: string;
   /** Last credential returned by the handler (for close flow) */
   lastCredential?: string;
+  /** Escrow contract address from the open challenge (for close flow) */
+  escrowContract?: string;
 }
 
 const sessions = new Map<string, SessionEntry>();

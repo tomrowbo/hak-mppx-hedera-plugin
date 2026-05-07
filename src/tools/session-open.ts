@@ -125,6 +125,7 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
     }
 
     // 5. Store session for future fetch/close calls
+    const escrowContract = challenge.request.methodDetails?.escrowContract ?? challenge.request.escrowContract;
     sessionStore.set(url, {
       handler,
       url,
@@ -132,6 +133,7 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
       network,
       openedAt: new Date().toISOString(),
       lastCredential: credential,
+      escrowContract,
     });
 
     return {

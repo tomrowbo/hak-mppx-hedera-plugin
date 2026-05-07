@@ -11,6 +11,7 @@ const fakePayload = {
 };
 const fakeCredB64 = Buffer.from(JSON.stringify(fakePayload)).toString('base64url');
 const fakeCredential = `Payment ${fakeCredB64}`;
+const ESCROW = '0x000000000000000000000000000000000000CAFE';
 
 const mockCreateCredential = vi.fn(async () => fakeCredential);
 
@@ -41,7 +42,7 @@ const mockFromResponse = vi.fn(() => ({
   request: {
     amount: '100',
     currency: '0.0.5449',
-    methodDetails: { escrowContract: '0x000000000000000000000000000000000000CAFE' },
+    methodDetails: { escrowContract: ESCROW },
   },
 }));
 
@@ -119,6 +120,7 @@ function seedSession() {
     network: 'testnet',
     openedAt: new Date().toISOString(),
     lastCredential: fakeCredential,
+    escrowContract: ESCROW,
   });
 }
 
@@ -150,19 +152,18 @@ describe('mppx_hedera_session_close_tool', () => {
       request: {
         amount: '100',
         currency: '0.0.5449',
-        methodDetails: { escrowContract: '0x000000000000000000000000000000000000CAFE' },
+        methodDetails: { escrowContract: ESCROW },
       },
     });
     mockCreateCredential.mockResolvedValue(fakeCredential);
     mockCredentialFrom.mockReturnValue({ challenge: {}, payload: {} });
     mockCredentialSerialize.mockReturnValue('Payment eyJjbG9zZSI6dHJ1ZX0');
 
-    // Default fetch sequence: challenge 402, close-challenge 402, close-send 200
+    // Default fetch: close-challenge 402, close-send 200
     vi.stubGlobal(
       'fetch',
       vi.fn()
-        .mockResolvedValueOnce(make402Response())  // initial challenge
-        .mockResolvedValueOnce(make402Response())  // fresh close challenge
+        .mockResolvedValueOnce(make402Response())  // close challenge
         .mockResolvedValueOnce(make200Response()),  // close response
     );
 
@@ -182,41 +183,42 @@ describe('mppx_hedera_session_close_tool', () => {
   });
 
   it('no session returns error', async () => {
-    // Do not seed session
     const result = await execute({ url: TEST_URL });
 
     expect(result.raw.error).toBe('No session open');
     expect(result.humanMessage).toContain('Nothing to close');
   });
 
-  it('server returns non-402 removes session and returns info', async () => {
-    seedSession();
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(new Response('ok', { status: 200 })),
-    );
-
-    const result = await execute({ url: TEST_URL });
-
-    expect(result.raw.error).toBe('Server did not return 402');
-    expect(result.raw.status).toBe(200);
-    expect(sessionStore.has(TEST_URL)).toBe(false);
-  });
-
   it('no lastCredential returns error and removes session', async () => {
-    // Seed a session without lastCredential
     sessionStore.set(TEST_URL, {
       handler: { createCredential: mockCreateCredential } as any,
       url: TEST_URL,
       deposit: '0.10',
       network: 'testnet',
       openedAt: new Date().toISOString(),
+      escrowContract: ESCROW,
     });
 
     const result = await execute({ url: TEST_URL });
 
     expect(result.raw.error).toBe('No credential to close with');
+    expect(sessionStore.has(TEST_URL)).toBe(false);
+  });
+
+  it('no escrowContract in session returns error', async () => {
+    sessionStore.set(TEST_URL, {
+      handler: { createCredential: mockCreateCredential } as any,
+      url: TEST_URL,
+      deposit: '0.10',
+      network: 'testnet',
+      openedAt: new Date().toISOString(),
+      lastCredential: fakeCredential,
+      // no escrowContract
+    });
+
+    const result = await execute({ url: TEST_URL });
+
+    expect(result.raw.error).toBe('Escrow contract not found');
     expect(sessionStore.has(TEST_URL)).toBe(false);
   });
 
@@ -226,8 +228,7 @@ describe('mppx_hedera_session_close_tool', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn()
-        .mockResolvedValueOnce(make402Response())  // initial challenge
-        .mockResolvedValueOnce(make402Response())  // fresh close challenge
+        .mockResolvedValueOnce(make402Response())  // close challenge
         .mockResolvedValueOnce(new Response('error', { status: 500 })),  // server rejects
     );
 
@@ -235,6 +236,21 @@ describe('mppx_hedera_session_close_tool', () => {
 
     expect(result.raw.status).toBe('close_attempted');
     expect(result.raw.serverStatus).toBe(500);
+    expect(sessionStore.has(TEST_URL)).toBe(false);
+  });
+
+  it('close challenge returns non-402 removes session', async () => {
+    seedSession();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(new Response('ok', { status: 200 })),
+    );
+
+    const result = await execute({ url: TEST_URL });
+
+    expect(result.raw.error).toBe('Close challenge failed');
+    expect(result.raw.status).toBe(200);
     expect(sessionStore.has(TEST_URL)).toBe(false);
   });
 
@@ -257,7 +273,6 @@ describe('mppx_hedera_session_close_tool', () => {
   });
 
   it('returns error when credential parsing fails', async () => {
-    // Seed with a bad lastCredential that will fail to deserialize
     sessionStore.set(TEST_URL, {
       handler: { createCredential: mockCreateCredential } as any,
       url: TEST_URL,
@@ -265,6 +280,7 @@ describe('mppx_hedera_session_close_tool', () => {
       network: 'testnet',
       openedAt: new Date().toISOString(),
       lastCredential: 'Payment !!!not-base64url!!!',
+      escrowContract: ESCROW,
     });
 
     const result = await execute({ url: TEST_URL });
@@ -273,39 +289,33 @@ describe('mppx_hedera_session_close_tool', () => {
     expect(sessionStore.has(TEST_URL)).toBe(false);
   });
 
-  it('returns error when escrow contract not found in challenge', async () => {
-    seedSession();
-    // Return challenge with no escrowContract in methodDetails or request
-    mockFromResponse.mockReturnValue({
-      method: 'hedera',
-      intent: 'session',
-      request: {
-        amount: '100',
-        currency: '0.0.5449',
-        // no methodDetails.escrowContract, no request.escrowContract
-      },
-    });
-
-    const result = await execute({ url: TEST_URL });
-
-    expect(result.raw.error).toBe('Escrow contract not found');
-    expect(sessionStore.has(TEST_URL)).toBe(false);
-  });
-
-  it('returns error when fresh close challenge fetch fails', async () => {
+  it('close challenge fetch failure removes session', async () => {
     seedSession();
 
     vi.stubGlobal(
       'fetch',
-      vi.fn()
-        .mockResolvedValueOnce(make402Response())  // initial challenge
-        .mockRejectedValueOnce(new Error('Network error')),  // fresh close challenge fails
+      vi.fn().mockRejectedValueOnce(new Error('Network error')),
     );
 
     const result = await execute({ url: TEST_URL });
 
-    expect(result.raw.error).toBe('Close challenge fetch failed');
+    expect(result.raw.error).toBe('Close failed');
     expect(result.raw.detail).toBe('Network error');
+    expect(sessionStore.has(TEST_URL)).toBe(false);
+  });
+
+  it('signTypedData failure removes session', async () => {
+    seedSession();
+
+    const { createWalletClient } = await import('viem');
+    vi.mocked(createWalletClient).mockReturnValueOnce({
+      signTypedData: vi.fn().mockRejectedValueOnce(new Error('Signing failed')),
+    } as any);
+
+    const result = await execute({ url: TEST_URL });
+
+    expect(result.raw.error).toBe('Close failed');
+    expect(result.raw.detail).toBe('Signing failed');
     expect(sessionStore.has(TEST_URL)).toBe(false);
   });
 

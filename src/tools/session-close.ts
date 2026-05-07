@@ -71,28 +71,7 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
       };
     }
 
-    // 1. Get a close challenge from the server
-    const challengeResponse = await fetch(url);
-    if (challengeResponse.status !== 402) {
-      // Remove the session anyway since it may be stale
-      sessionStore.remove(url);
-      return {
-        raw: { error: 'Server did not return 402', status: challengeResponse.status },
-        humanMessage: `Server returned ${challengeResponse.status} instead of 402. Session removed.`,
-      };
-    }
-
-    let challenge;
-    try {
-      challenge = Challenge.fromResponse(challengeResponse);
-    } catch (e: any) {
-      return {
-        raw: { error: 'Failed to parse challenge', detail: e.message },
-        humanMessage: `Failed to parse close challenge: ${e.message}`,
-      };
-    }
-
-    // 2. Extract channelId and cumulativeAmount from the last credential
+    // 1. Extract channelId and cumulativeAmount from the last credential
     //    We use the stored lastCredential to avoid calling createCredential(),
     //    which would increment cumulativeAmount and overpay by one request.
     if (!session.lastCredential) {
@@ -113,6 +92,7 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
       channelId = parsed.payload.channelId;
       cumulativeAmount = BigInt(parsed.payload.cumulativeAmount);
       if (!channelId) throw new Error('channelId missing from credential payload');
+      if (parsed.payload.cumulativeAmount == null) throw new Error('cumulativeAmount missing from credential payload');
     } catch (e: any) {
       sessionStore.remove(url);
       return {
@@ -121,84 +101,82 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
       };
     }
 
-    // 3. Sign a close voucher (EIP-712)
-    const network = resolveNetwork(mppxContext);
-    const account = contextToViemAccount(mppxContext);
-    const chain = resolveChain(network);
-    const escrow = challenge.request.methodDetails?.escrowContract ?? challenge.request.escrowContract;
-
+    // 2. Get the escrow contract from session state (stored at open time)
+    const escrow = session.escrowContract;
     if (!escrow) {
       sessionStore.remove(url);
       return {
         raw: { error: 'Escrow contract not found', url },
-        humanMessage: `Cannot close: escrow contract address not found in server challenge. Session removed locally — the channel may need manual settlement.`,
+        humanMessage: `Cannot close: escrow contract address not found in session state. Session removed locally — the channel may need manual settlement.`,
       };
     }
 
-    const walletClient = createWalletClient({ account, chain, transport: http() });
-
-    const closeSig = await walletClient.signTypedData({
-      account,
-      domain: {
-        name: VOUCHER_DOMAIN_NAME,
-        version: VOUCHER_DOMAIN_VERSION,
-        chainId: chain.id,
-        verifyingContract: escrow as `0x${string}`,
-      },
-      types: VOUCHER_TYPES,
-      primaryType: 'Voucher',
-      message: { channelId, cumulativeAmount },
-    });
-
-    // 4. Get a fresh challenge for the close action
-    let closeChallenge;
+    // 3. Sign close voucher, get challenge, and send — wrapped in try-finally
+    //    to ensure session is always cleaned up.
     try {
-      const closeChallengeResponse = await fetch(url);
-      if (closeChallengeResponse.status !== 402) {
-        sessionStore.remove(url);
+      const network = resolveNetwork(mppxContext);
+      const account = contextToViemAccount(mppxContext);
+      const chain = resolveChain(network);
+
+      const walletClient = createWalletClient({ account, chain, transport: http() });
+
+      const closeSig = await walletClient.signTypedData({
+        account,
+        domain: {
+          name: VOUCHER_DOMAIN_NAME,
+          version: VOUCHER_DOMAIN_VERSION,
+          chainId: chain.id,
+          verifyingContract: escrow as `0x${string}`,
+        },
+        types: VOUCHER_TYPES,
+        primaryType: 'Voucher',
+        message: { channelId, cumulativeAmount },
+      });
+
+      // 4. Get a challenge for the close action
+      const challengeResponse = await fetch(url);
+      if (challengeResponse.status !== 402) {
         return {
-          raw: { error: 'Close challenge failed', status: closeChallengeResponse.status },
-          humanMessage: `Failed to get fresh challenge for close (status ${closeChallengeResponse.status}). Session removed locally.`,
+          raw: { error: 'Close challenge failed', status: challengeResponse.status },
+          humanMessage: `Failed to get challenge for close (status ${challengeResponse.status}). Session removed locally.`,
         };
       }
-      closeChallenge = Challenge.fromResponse(closeChallengeResponse);
+      const closeChallenge = Challenge.fromResponse(challengeResponse);
+
+      // 5. Build and send close credential
+      const closeCred = Credential.from({
+        challenge: closeChallenge,
+        payload: {
+          action: 'close',
+          channelId,
+          cumulativeAmount: cumulativeAmount.toString(),
+          signature: closeSig,
+        },
+      });
+
+      const closeResponse = await fetch(url, {
+        headers: { Authorization: Credential.serialize(closeCred) },
+      });
+
+      if (closeResponse.status === 200) {
+        return {
+          raw: { url, status: 'closed', settled: cumulativeAmount.toString() },
+          humanMessage: `Session closed for ${url}. Settled ${cumulativeAmount} base units on-chain. Unused deposit refunded.`,
+        };
+      }
+
+      return {
+        raw: { url, status: 'close_attempted', serverStatus: closeResponse.status },
+        humanMessage: `Close sent to ${url} (server returned ${closeResponse.status}). Session removed locally.`,
+      };
     } catch (e: any) {
+      return {
+        raw: { error: 'Close failed', detail: e.message },
+        humanMessage: `Failed to close session: ${e.message}. Session removed locally — the channel may need manual settlement.`,
+      };
+    } finally {
       sessionStore.remove(url);
-      return {
-        raw: { error: 'Close challenge fetch failed', detail: e.message },
-        humanMessage: `Failed to fetch close challenge: ${e.message}. Session removed locally — the channel may need manual settlement.`,
-      };
     }
-
-    // 5. Build and send close credential
-    const closeCred = Credential.from({
-      challenge: closeChallenge,
-      payload: {
-        action: 'close',
-        channelId,
-        cumulativeAmount: cumulativeAmount.toString(),
-        signature: closeSig,
-      },
-    });
-
-    const closeResponse = await fetch(url, {
-      headers: { Authorization: Credential.serialize(closeCred) },
-    });
-
-    // 6. Clean up
-    sessionStore.remove(url);
-
-    if (closeResponse.status === 200) {
-      return {
-        raw: { url, status: 'closed', settled: cumulativeAmount.toString() },
-        humanMessage: `Session closed for ${url}. Settled ${cumulativeAmount} base units on-chain. Unused deposit refunded.`,
-      };
-    }
-
-    return {
-      raw: { url, status: 'close_attempted', serverStatus: closeResponse.status },
-      humanMessage: `Close sent to ${url} (server returned ${closeResponse.status}). Session removed locally.`,
-    };
   }
 
   override async shouldSecondaryAction(_coreActionResult: unknown, _context: Context) {

@@ -106,6 +106,10 @@ describe('mppx_hedera_session_fetch_tool', () => {
     expect(result.raw.data).toBe('{"result":"ok"}');
     expect(result.raw.paid).toBe(true);
     expect(mockCreateCredential).toHaveBeenCalled();
+
+    // Verify lastCredential was updated in the session store
+    const session = sessionStore.get(TEST_URL);
+    expect(session?.lastCredential).toBe('Payment eyJmYWtlIjoidHJ1ZSJ9');
   });
 
   it('no session returns error', async () => {

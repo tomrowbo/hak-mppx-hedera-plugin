@@ -26,7 +26,7 @@ vi.mock('mppx-hedera/client', () => ({
 const mockFromResponse = vi.fn(() => ({
   method: 'hedera',
   intent: 'session',
-  request: { amount: '1000', currency: '0.0.5449' },
+  request: { amount: '1000', currency: '0.0.5449', methodDetails: { escrowContract: '0x000000000000000000000000000000000000CAFE' } },
 }));
 
 vi.mock('mppx', () => ({
@@ -77,7 +77,7 @@ describe('mppx_hedera_session_open_tool', () => {
     mockFromResponse.mockReturnValue({
       method: 'hedera',
       intent: 'session',
-      request: { amount: '1000', currency: '0.0.5449' },
+      request: { amount: '1000', currency: '0.0.5449', methodDetails: { escrowContract: '0x000000000000000000000000000000000000CAFE' } },
     });
     mockCreateCredential.mockResolvedValue('Payment eyJmYWtlIjoidHJ1ZSJ9');
 
@@ -204,5 +204,7 @@ describe('mppx_hedera_session_open_tool', () => {
     expect(entry!.network).toBe('testnet');
     expect(entry!.openedAt >= before).toBe(true);
     expect(entry!.openedAt <= after).toBe(true);
+    expect(entry!.lastCredential).toBe('Payment eyJmYWtlIjoidHJ1ZSJ9');
+    expect(entry!.escrowContract).toBeDefined();
   });
 });
