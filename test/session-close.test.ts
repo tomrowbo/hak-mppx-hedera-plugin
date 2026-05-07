@@ -48,6 +48,11 @@ const mockFromResponse = vi.fn(() => ({
 const mockCredentialFrom = vi.fn(() => ({ challenge: {}, payload: {} }));
 const mockCredentialSerialize = vi.fn(() => 'Payment eyJjbG9zZSI6dHJ1ZX0');
 
+const mockCredentialDeserialize = vi.fn((value: string) => {
+  const b64 = value.replace('Payment ', '');
+  return JSON.parse(Buffer.from(b64, 'base64url').toString());
+});
+
 vi.mock('mppx', () => ({
   Challenge: {
     fromResponse: (...args: any[]) => mockFromResponse(...args),
@@ -55,6 +60,7 @@ vi.mock('mppx', () => ({
   Credential: {
     from: (...args: any[]) => mockCredentialFrom(...args),
     serialize: (...args: any[]) => mockCredentialSerialize(...args),
+    deserialize: (...args: any[]) => mockCredentialDeserialize(...args),
   },
 }));
 
@@ -112,6 +118,7 @@ function seedSession() {
     deposit: '0.10',
     network: 'testnet',
     openedAt: new Date().toISOString(),
+    lastCredential: fakeCredential,
   });
 }
 
@@ -197,14 +204,19 @@ describe('mppx_hedera_session_close_tool', () => {
     expect(sessionStore.has(TEST_URL)).toBe(false);
   });
 
-  it('session exhausted (createCredential throws) removes session', async () => {
-    seedSession();
-    mockCreateCredential.mockRejectedValueOnce(new Error('Deposit fully spent'));
+  it('no lastCredential returns error and removes session', async () => {
+    // Seed a session without lastCredential
+    sessionStore.set(TEST_URL, {
+      handler: { createCredential: mockCreateCredential } as any,
+      url: TEST_URL,
+      deposit: '0.10',
+      network: 'testnet',
+      openedAt: new Date().toISOString(),
+    });
 
     const result = await execute({ url: TEST_URL });
 
-    expect(result.raw.error).toBe('Session exhausted');
-    expect(result.raw.detail).toBe('Deposit fully spent');
+    expect(result.raw.error).toBe('No credential to close with');
     expect(sessionStore.has(TEST_URL)).toBe(false);
   });
 
@@ -223,6 +235,77 @@ describe('mppx_hedera_session_close_tool', () => {
 
     expect(result.raw.status).toBe('close_attempted');
     expect(result.raw.serverStatus).toBe(500);
+    expect(sessionStore.has(TEST_URL)).toBe(false);
+  });
+
+  it('returns error when context.privateKey is missing', async () => {
+    const mod = await import('../src/tools/session-close.js');
+    const result = await mod.default.execute(mockClient, { network: 'testnet' }, {
+      url: TEST_URL,
+    });
+
+    expect(result.raw.error).toBe('Missing privateKey');
+  });
+
+  it('throws when AgentMode.RETURN_BYTES is used', async () => {
+    const mod = await import('../src/tools/session-close.js');
+    const result = await mod.default.execute(mockClient, { ...context, mode: 'returnBytes' }, {
+      url: TEST_URL,
+    });
+
+    expect(result.raw.error).toContain('RETURN_BYTES');
+  });
+
+  it('returns error when credential parsing fails', async () => {
+    // Seed with a bad lastCredential that will fail to deserialize
+    sessionStore.set(TEST_URL, {
+      handler: { createCredential: mockCreateCredential } as any,
+      url: TEST_URL,
+      deposit: '0.10',
+      network: 'testnet',
+      openedAt: new Date().toISOString(),
+      lastCredential: 'Payment !!!not-base64url!!!',
+    });
+
+    const result = await execute({ url: TEST_URL });
+
+    expect(result.raw.error).toBe('Failed to parse credential');
+    expect(sessionStore.has(TEST_URL)).toBe(false);
+  });
+
+  it('returns error when escrow contract not found in challenge', async () => {
+    seedSession();
+    // Return challenge with no escrowContract in methodDetails or request
+    mockFromResponse.mockReturnValue({
+      method: 'hedera',
+      intent: 'session',
+      request: {
+        amount: '100',
+        currency: '0.0.5449',
+        // no methodDetails.escrowContract, no request.escrowContract
+      },
+    });
+
+    const result = await execute({ url: TEST_URL });
+
+    expect(result.raw.error).toBe('Escrow contract not found');
+    expect(sessionStore.has(TEST_URL)).toBe(false);
+  });
+
+  it('returns error when fresh close challenge fetch fails', async () => {
+    seedSession();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce(make402Response())  // initial challenge
+        .mockRejectedValueOnce(new Error('Network error')),  // fresh close challenge fails
+    );
+
+    const result = await execute({ url: TEST_URL });
+
+    expect(result.raw.error).toBe('Close challenge fetch failed');
+    expect(result.raw.detail).toBe('Network error');
     expect(sessionStore.has(TEST_URL)).toBe(false);
   });
 

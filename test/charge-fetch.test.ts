@@ -201,4 +201,24 @@ describe('charge-fetch tool', () => {
     const parsed = chargeFetchTool.parameters.parse({ url: 'https://example.com' });
     expect(parsed.maxAmount).toBe('100000');
   });
+
+  it('returns error when context.privateKey is missing', async () => {
+    const result = await chargeFetchTool.execute(mockClient as any, { network: 'testnet' }, {
+      url: 'https://api.example.com/data',
+      method: 'GET',
+      maxAmount: '100000',
+    });
+
+    expect(result.raw.error).toBe('Missing privateKey');
+  });
+
+  it('throws when AgentMode.RETURN_BYTES is used', async () => {
+    const result = await chargeFetchTool.execute(mockClient as any, { ...context, mode: 'returnBytes' }, {
+      url: 'https://api.example.com/data',
+      method: 'GET',
+      maxAmount: '100000',
+    });
+
+    expect(result.raw.error).toContain('RETURN_BYTES');
+  });
 });

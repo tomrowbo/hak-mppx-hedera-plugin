@@ -5,7 +5,7 @@
  * Full flow: GET → 402 challenge → pay via native Hedera tx → retry → return data.
  */
 
-import { BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
+import { AgentMode, BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
 import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
@@ -49,7 +49,7 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
   }
 
   async coreAction(args: ChargeFetchInput, context: Context, client: Client) {
-    if ((context as any).mode === 'returnBytes') {
+    if (context.mode === AgentMode.RETURN_BYTES) {
       throw new Error(
         `${TOOL_NAME} does not support AgentMode.RETURN_BYTES. ` +
         'MPP charge payments require direct transaction signing with a private key ' +
@@ -123,7 +123,7 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
     // 5. Retry with credential
     const paidResponse = await fetch(url, {
       method,
-      ...(body ? { body, headers: { 'Content-Type': 'application/json' } } : {}),
+      ...(body ? { body } : {}),
       headers: {
         ...(body ? { 'Content-Type': 'application/json' } : {}),
         Authorization: credential,

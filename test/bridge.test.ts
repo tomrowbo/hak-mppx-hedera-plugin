@@ -41,6 +41,12 @@ describe('bridge', () => {
       const client = mockClient();
       expect(() => getOperatorId(client as any)).toThrow('Cannot determine operator account ID');
     });
+
+    it('falls back to context.accountId when client has no operator', () => {
+      const client = mockClient(); // no operatorAccountId
+      const context: MppxContext = { accountId: '0.0.99999' };
+      expect(getOperatorId(client as any, context)).toBe('0.0.99999');
+    });
   });
 
   describe('getPrivateKey', () => {

@@ -166,6 +166,16 @@ describe('mppx_hedera_session_fetch_tool', () => {
     expect(secondCall[1].headers['Content-Type']).toBe('application/json');
   });
 
+  it('throws when AgentMode.RETURN_BYTES is used', async () => {
+    const mod = await import('../src/tools/session-fetch.js');
+    const result = await mod.default.execute(mockClient, { ...context, mode: 'returnBytes' }, {
+      url: TEST_URL,
+      method: 'GET',
+    });
+
+    expect(result.raw.error).toContain('RETURN_BYTES');
+  });
+
   it('multiple fetches work (3 consecutive calls)', async () => {
     seedSession();
 

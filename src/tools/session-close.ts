@@ -5,7 +5,7 @@
  * The server calls escrow.close() — payee receives earned amount, payer gets refund.
  */
 
-import { BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
+import { AgentMode, BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
 import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge, Credential } from 'mppx';
@@ -45,7 +45,7 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
   }
 
   async coreAction(args: SessionCloseInput, context: Context, _client: Client) {
-    if ((context as any).mode === 'returnBytes') {
+    if (context.mode === AgentMode.RETURN_BYTES) {
       throw new Error(
         `${TOOL_NAME} does not support AgentMode.RETURN_BYTES. ` +
         'MPP session close requires direct EIP-712 signing with a private key ' +
@@ -92,25 +92,24 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
       };
     }
 
-    // 2. Build close credential
-    let lastCredential;
-    try {
-      lastCredential = await session.handler.createCredential({ challenge });
-    } catch (e: any) {
-      // Session may be exhausted — still try to close
+    // 2. Extract channelId and cumulativeAmount from the last credential
+    //    We use the stored lastCredential to avoid calling createCredential(),
+    //    which would increment cumulativeAmount and overpay by one request.
+    if (!session.lastCredential) {
       sessionStore.remove(url);
       return {
-        raw: { error: 'Session exhausted', detail: e.message },
-        humanMessage: `Session appears exhausted. Removed locally. The server may settle automatically.`,
+        raw: { error: 'No credential to close with', url },
+        humanMessage: `No voucher has been issued on this session. Session removed locally.`,
       };
     }
 
-    // Parse the credential to get channelId and cumulative amount
     let channelId: string;
     let cumulativeAmount: bigint;
     try {
-      const b64 = lastCredential.replace('Payment ', '');
-      const parsed = JSON.parse(Buffer.from(b64, 'base64url').toString());
+      const parsed = Credential.deserialize<{
+        channelId: string;
+        cumulativeAmount: string;
+      }>(session.lastCredential);
       channelId = parsed.payload.channelId;
       cumulativeAmount = BigInt(parsed.payload.cumulativeAmount);
       if (!channelId) throw new Error('channelId missing from credential payload');

@@ -172,6 +172,26 @@ describe('mppx_hedera_session_open_tool', () => {
     expect(sessionStore.has(TEST_URL)).toBe(false);
   });
 
+  it('returns error when context.privateKey is missing', async () => {
+    const mod = await import('../src/tools/session-open.js');
+    const result = await mod.default.execute(mockClient, { network: 'testnet' }, {
+      url: TEST_URL,
+      deposit: '0.10',
+    });
+
+    expect(result.raw.error).toBe('Missing privateKey');
+  });
+
+  it('throws when AgentMode.RETURN_BYTES is used', async () => {
+    const mod = await import('../src/tools/session-open.js');
+    const result = await mod.default.execute(mockClient, { ...context, mode: 'returnBytes' }, {
+      url: TEST_URL,
+      deposit: '0.10',
+    });
+
+    expect(result.raw.error).toContain('RETURN_BYTES');
+  });
+
   it('session stored with correct url, deposit, network, openedAt', async () => {
     const before = new Date().toISOString();
     await execute({ url: TEST_URL, deposit: '0.50' });

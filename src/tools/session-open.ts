@@ -5,7 +5,7 @@
  * Deposits USDC into an escrow contract, enabling fast off-chain voucher payments.
  */
 
-import { BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
+import { AgentMode, BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
 import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
@@ -43,7 +43,7 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
   }
 
   async coreAction(args: SessionOpenInput, context: Context, _client: Client) {
-    if ((context as any).mode === 'returnBytes') {
+    if (context.mode === AgentMode.RETURN_BYTES) {
       throw new Error(
         `${TOOL_NAME} does not support AgentMode.RETURN_BYTES. ` +
         'MPP session open requires direct transaction signing with a private key ' +
@@ -131,6 +131,7 @@ export class SessionOpenTool extends BaseTool<SessionOpenInput, SessionOpenInput
       deposit,
       network,
       openedAt: new Date().toISOString(),
+      lastCredential: credential,
     });
 
     return {

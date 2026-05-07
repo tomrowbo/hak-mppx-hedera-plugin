@@ -5,7 +5,7 @@
  * Signs an off-chain EIP-712 voucher (sub-millisecond, no gas) and sends the request.
  */
 
-import { BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
+import { AgentMode, BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
 import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
@@ -42,7 +42,7 @@ export class SessionFetchTool extends BaseTool<SessionFetchInput, SessionFetchIn
   }
 
   async coreAction(args: SessionFetchInput, _context: Context, _client: Client) {
-    if ((_context as any).mode === 'returnBytes') {
+    if (_context.mode === AgentMode.RETURN_BYTES) {
       throw new Error(
         `${TOOL_NAME} does not support AgentMode.RETURN_BYTES. ` +
         'MPP session fetch requires direct EIP-712 voucher signing with a private key ' +
@@ -93,6 +93,9 @@ export class SessionFetchTool extends BaseTool<SessionFetchInput, SessionFetchIn
         humanMessage: `Failed to sign voucher: ${e.message}. The session may be exhausted — try mppx_hedera_session_close_tool and reopen with a larger deposit.`,
       };
     }
+
+    // Track the last credential for the close flow
+    session.lastCredential = credential;
 
     // 3. Send authorized request
     const paidResponse = await fetch(url, {

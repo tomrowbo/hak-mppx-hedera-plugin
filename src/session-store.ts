@@ -19,6 +19,8 @@ export interface SessionEntry {
   network: 'testnet' | 'mainnet';
   /** Timestamp when opened */
   openedAt: string;
+  /** Last credential returned by the handler (for close flow) */
+  lastCredential?: string;
 }
 
 const sessions = new Map<string, SessionEntry>();
