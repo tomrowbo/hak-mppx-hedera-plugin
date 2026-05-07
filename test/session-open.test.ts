@@ -91,8 +91,7 @@ describe('mppx_hedera_session_open_tool', () => {
 
     // Dynamic import to pick up mocks
     const mod = await import('../src/tools/session-open.js');
-    const tool = mod.default(context);
-    execute = (params: any) => tool.execute(mockClient, context, params);
+    execute = (params: any) => mod.default.execute(mockClient, context, params);
   });
 
   it('402 + session challenge opens channel, stores session, returns success', async () => {

@@ -160,8 +160,7 @@ describe('mppx_hedera_session_close_tool', () => {
     );
 
     const mod = await import('../src/tools/session-close.js');
-    const tool = mod.default(context);
-    execute = (params: any) => tool.execute(mockClient, context, params);
+    execute = (params: any) => mod.default.execute(mockClient, context, params);
   });
 
   it('closes, settles, removes from store, returns success', async () => {
