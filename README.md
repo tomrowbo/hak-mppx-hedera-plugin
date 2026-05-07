@@ -170,7 +170,7 @@ Spins up a real mppx server, registers the plugin with `HederaAgentAPI`, and cal
 ## Testing
 
 ```bash
-# Unit + integration tests (56 tests, no network)
+# Unit + integration tests (70 tests, no network)
 npm test
 
 # Agent Kit integration (real HederaAgentAPI + real Hedera testnet)
