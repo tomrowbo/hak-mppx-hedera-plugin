@@ -10,6 +10,7 @@ import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
 import { charge } from 'mppx-hedera/client';
+import { USDC_TESTNET, USDC_MAINNET } from 'mppx-hedera';
 import { getOperatorId, getPrivateKey, resolveNetwork, type MppxContext } from '../bridge.js';
 
 export const TOOL_NAME = 'mppx_hedera_charge_fetch_tool';
@@ -110,6 +111,23 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
         humanMessage: `Server 402 challenge has an invalid amount: "${amountStr}".`,
       };
     }
+    // 3b. Validate currency is USDC (prevents paying in a different token)
+    const currency = challenge.request.currency as string | undefined;
+    const network = resolveNetwork(mppxContext);
+    const expectedCurrency = network === 'mainnet' ? USDC_MAINNET : USDC_TESTNET;
+    if (currency) {
+      // Normalize 0.0.X format to 0x EVM address for comparison
+      const normalizedCurrency = currency.startsWith('0.0.')
+        ? '0x' + parseInt(currency.split('.')[2]).toString(16).padStart(40, '0')
+        : currency;
+      if (normalizedCurrency.toLowerCase() !== expectedCurrency.toLowerCase()) {
+        return {
+          raw: { error: 'Unexpected currency', currency, expected: expectedCurrency },
+          humanMessage: `Server requested payment in ${currency}, but only USDC (${expectedCurrency}) is supported.`,
+        };
+      }
+    }
+
     if (requestedAmount > BigInt(maxAmount)) {
       return {
         raw: { error: 'Amount exceeds budget', requested: challenge.request.amount, maxAmount },
@@ -118,7 +136,6 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
     }
 
     // 4. Create charge handler and pay
-    const network = resolveNetwork(mppxContext);
     const chargeHandler = charge({
       operatorId: getOperatorId(client, mppxContext),
       operatorKey: getPrivateKey(mppxContext),

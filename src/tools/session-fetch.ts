@@ -9,6 +9,7 @@ import { AgentMode, BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
 import type { Client } from '@hiero-ledger/sdk';
 import { z } from 'zod';
 import { Challenge } from 'mppx';
+import { parseUnits } from 'viem';
 import * as sessionStore from '../session-store.js';
 
 export const TOOL_NAME = 'mppx_hedera_session_fetch_tool';
@@ -87,7 +88,7 @@ export class SessionFetchTool extends BaseTool<SessionFetchInput, SessionFetchIn
     //    Prevents a malicious server from demanding the entire deposit in one call.
     const requestAmount = challenge.request?.amount as string | undefined;
     if (requestAmount) {
-      const depositBaseUnits = BigInt(Math.floor(parseFloat(session.deposit) * 1e6));
+      const depositBaseUnits = parseUnits(session.deposit, 6);
       const requested = BigInt(requestAmount);
       if (requested > depositBaseUnits) {
         return {

@@ -257,6 +257,34 @@ describe('charge-fetch tool', () => {
     expect(result.raw.amount).toBe('not-a-number');
   });
 
+  it('returns error when currency is not USDC', async () => {
+    const challenge = Challenge.from({
+      id: 'test-id',
+      realm: 'https://api.example.com',
+      method: 'hedera',
+      intent: 'charge',
+      request: {
+        amount: '50000',
+        currency: '0x000000000000000000000000000000000000BEEF',
+        decimals: 6,
+        recipient: '0x0000000000000000000000000000000000001234',
+      },
+    });
+    const headerValue = Challenge.serialize(challenge);
+    const headers = new Headers();
+    headers.set('WWW-Authenticate', headerValue);
+    globalThis.fetch = vi.fn(async () => new Response(null, { status: 402, headers }));
+
+    const result = await chargeFetchTool.execute(mockClient as any, context, {
+      url: 'https://api.example.com/bad',
+      method: 'GET',
+      maxAmount: '100000',
+    });
+
+    expect(result.raw.error).toBe('Unexpected currency');
+    expect(result.humanMessage).toContain('only USDC');
+  });
+
   it('returns error when context.privateKey is missing', async () => {
     const result = await chargeFetchTool.execute(mockClient as any, { network: 'testnet' }, {
       url: 'https://api.example.com/data',
