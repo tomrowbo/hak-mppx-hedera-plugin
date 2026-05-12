@@ -7,7 +7,7 @@
 
 import { AgentMode, BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
 import type { Client } from '@hiero-ledger/sdk';
-import { z } from 'zod';
+import { z } from 'zod/v3';
 import { Challenge } from 'mppx';
 import { charge } from 'mppx-hedera/client';
 import { USDC_TESTNET, USDC_MAINNET } from 'mppx-hedera';
@@ -43,6 +43,7 @@ export class ChargeFetchTool extends BaseTool<ChargeFetchInput, ChargeFetchInput
   method = TOOL_NAME;
   name = 'MPP Charge Fetch';
   description = description;
+  // @ts-expect-error -- zod/v3 re-export has different private field identity than agent-kit's bundled zod v3
   parameters = parameters;
 
   async normalizeParams(params: ChargeFetchInput, _context: Context, _client: Client): Promise<ChargeFetchInput> {

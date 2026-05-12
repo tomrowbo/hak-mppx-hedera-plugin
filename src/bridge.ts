@@ -42,7 +42,11 @@ export function contextToViemAccount(context: MppxContext): Account {
 /**
  * Create viem wallet + public clients from context.
  */
-export function contextToViemClients(context: MppxContext) {
+export function contextToViemClients(context: MppxContext): {
+  account: Account;
+  walletClient: ReturnType<typeof createWalletClient>;
+  publicClient: ReturnType<typeof createPublicClient>;
+} {
   const account = contextToViemAccount(context);
   const chain = resolveChain(context.network);
 

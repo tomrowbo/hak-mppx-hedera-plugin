@@ -7,7 +7,7 @@
 
 import { AgentMode, BaseTool, type Context } from '@hashgraph/hedera-agent-kit';
 import type { Client } from '@hiero-ledger/sdk';
-import { z } from 'zod';
+import { z } from 'zod/v3';
 import { Challenge, Credential } from 'mppx';
 import { createWalletClient, http } from 'viem';
 import {
@@ -38,6 +38,7 @@ export class SessionCloseTool extends BaseTool<SessionCloseInput, SessionCloseIn
   method = TOOL_NAME;
   name = 'MPP Session Close';
   description = description;
+  // @ts-expect-error -- zod/v3 re-export has different private field identity than agent-kit's bundled zod v3
   parameters = parameters;
 
   async normalizeParams(params: SessionCloseInput, _context: Context, _client: Client): Promise<SessionCloseInput> {

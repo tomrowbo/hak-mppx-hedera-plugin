@@ -3,7 +3,7 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: { index: 'src/index.ts' },
   format: ['esm'],
-  dts: false, // Zod v3 (agent-kit) vs v4 (mppx) type mismatch — skip dts for now
+  dts: true,
   clean: true,
   sourcemap: true,
   external: [
@@ -16,5 +16,6 @@ export default defineConfig({
     'viem',
     'viem/accounts',
     'zod',
+    'zod/v3',
   ],
 });

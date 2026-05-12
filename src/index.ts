@@ -11,7 +11,7 @@
  * - mppx_hedera_session_close_tool — settle and close channel (refund unused deposit)
  */
 
-import type { Plugin, Context } from '@hashgraph/hedera-agent-kit';
+import type { Plugin, Tool, Context } from '@hashgraph/hedera-agent-kit';
 import { chargeFetchTool, TOOL_NAME as CHARGE_FETCH } from './tools/charge-fetch.js';
 import { sessionOpenTool, TOOL_NAME as SESSION_OPEN } from './tools/session-open.js';
 import { sessionFetchTool, TOOL_NAME as SESSION_FETCH } from './tools/session-fetch.js';
@@ -26,13 +26,15 @@ export const mppxHederaPluginToolNames = {
 
 export const mppxHederaPlugin: Plugin = {
   name: 'hak-mppx-hedera-plugin',
-  version: '1.1.2',
+  version: '1.1.3',
   description: 'Machine Payments Protocol (MPP) for Hedera — charge and session payments with USDC. Enables AI agents to pay for 402-protected APIs.',
-  tools: (_context: Context) => [
-    chargeFetchTool,
-    sessionOpenTool,
-    sessionFetchTool,
-    sessionCloseTool,
+  // Cast needed: zod/v3 re-export has a different class identity than
+  // agent-kit's bundled zod v3 due to private fields. Structurally identical.
+  tools: (_context: Context): Tool[] => [
+    chargeFetchTool as unknown as Tool,
+    sessionOpenTool as unknown as Tool,
+    sessionFetchTool as unknown as Tool,
+    sessionCloseTool as unknown as Tool,
   ],
 };
 
