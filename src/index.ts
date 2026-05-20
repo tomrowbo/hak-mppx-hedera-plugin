@@ -26,7 +26,7 @@ export const mppxHederaPluginToolNames = {
 
 export const mppxHederaPlugin: Plugin = {
   name: 'hak-mppx-hedera-plugin',
-  version: '1.2.0',
+  version: '1.2.1',
   description: 'Machine Payments Protocol (MPP) for Hedera — charge and session payments with USDC. Enables AI agents to pay for 402-protected APIs.',
   // Cast needed: zod/v3 re-export has a different class identity than
   // agent-kit's bundled zod v3 due to private fields. Structurally identical.
