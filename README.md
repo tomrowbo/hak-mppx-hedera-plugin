@@ -5,6 +5,21 @@ Hedera Agent Kit plugin for the [Machine Payments Protocol](https://mpp.dev). En
 [![npm](https://img.shields.io/npm/v/hak-mppx-hedera-plugin)](https://www.npmjs.com/package/hak-mppx-hedera-plugin)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+## Requirements
+
+- **A Hedera account with an ECDSA (secp256k1) key.**
+  Ed25519 accounts are not supported because the plugin uses EIP-712 voucher
+  signing (sessions) and EVM-address derivation, both of which depend on
+  `ecrecover` and are secp256k1-only at the EVM precompile level.
+
+  Using an Ed25519 key produces a **silent failure**: `viem` accepts any
+  32-byte hex and derives a wrong EVM identity, which the server then rejects
+  with a confusing "signature mismatch" or "no matching transfer" error.
+
+  How to check: in Hedera Portal (or `hashscan.io`), your account's key type
+  is visible next to the account ID. ECDSA accounts also have an EVM address
+  (`0x…` 20-byte); Ed25519 accounts do not.
+
 ## Install
 
 ```bash
