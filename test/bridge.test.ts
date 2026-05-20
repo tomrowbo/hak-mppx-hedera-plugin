@@ -29,6 +29,19 @@ describe('bridge', () => {
       const context: MppxContext = {};
       expect(() => contextToViemAccount(context)).toThrow('context.privateKey is required');
     });
+
+    it('throws when Ed25519 DER key is provided', () => {
+      // Ed25519 DER-encoded private key (starts with 302e020100300506032b657004220420)
+      const ed25519DerKey = '302e020100300506032b657004220420' + 'ab'.repeat(32);
+      const context: MppxContext = { privateKey: ed25519DerKey };
+      expect(() => contextToViemAccount(context)).toThrow('Ed25519 keys are not supported');
+    });
+
+    it('throws when 0x-prefixed Ed25519 DER key is provided', () => {
+      const ed25519DerKey = '0x302e020100300506032b657004220420' + 'ab'.repeat(32);
+      const context: MppxContext = { privateKey: ed25519DerKey };
+      expect(() => contextToViemAccount(context)).toThrow('Ed25519 keys are not supported');
+    });
   });
 
   describe('getOperatorId', () => {

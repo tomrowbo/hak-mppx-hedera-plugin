@@ -28,15 +28,26 @@ export function resolveNetwork(context: MppxContext): 'testnet' | 'mainnet' {
   return context.network === 'mainnet' ? 'mainnet' : 'testnet';
 }
 
+// DER prefix for Ed25519 private keys (RFC 8410)
+const ED25519_DER_PREFIX = '302e020100300506032b657004220420';
+
 /**
  * Create a viem Account from the context's private key.
+ * Rejects Ed25519 keys early with a clear error instead of silent failure.
  */
 export function contextToViemAccount(context: MppxContext): Account {
   if (!context.privateKey) {
     throw new Error('context.privateKey is required for MPP session operations. Pass your ECDSA private key as a 0x-prefixed hex string.');
   }
-  const key = context.privateKey.startsWith('0x') ? context.privateKey : `0x${context.privateKey}`;
-  return privateKeyToAccount(key as `0x${string}`);
+  const raw = context.privateKey.startsWith('0x') ? context.privateKey.slice(2) : context.privateKey;
+  if (raw.toLowerCase().startsWith(ED25519_DER_PREFIX)) {
+    throw new Error(
+      'Ed25519 keys are not supported. MPP requires an ECDSA (secp256k1) key for EIP-712 signing and EVM-address derivation. ' +
+      'Check your account key type on hashscan.io — ECDSA accounts have an EVM address (0x…), Ed25519 accounts do not.',
+    );
+  }
+  const key = `0x${raw}` as `0x${string}`;
+  return privateKeyToAccount(key);
 }
 
 /**
